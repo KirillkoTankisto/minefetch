@@ -2,7 +2,6 @@ mod structs;
 
 use structs::Config;
 use structs::Profile;
-use structs::SiteInfo;
 use structs::VersionsList;
 
 use tokio::io::AsyncWriteExt;
@@ -14,53 +13,31 @@ use serde_json;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let first: String = std::env::args().nth(1).expect("can't get value from args");
-
-    let client = reqwest::Client::new();
-
-    // test zone
-
-    let path = "/home/kirill/rust/mods";
-
-    //
-
-    if first == "add" {
-        let modname = std::env::args().nth(2).expect("can't get value from args");
-
-        let params = vec![
-            (
-                "loaders",
-                serde_json::to_string(&["fabric"]).expect("Failed to serialize loaders"),
-            ),
-            (
-                "game_versions",
-                serde_json::to_string(&["1.21.4"]).expect("Failed to serialize game_versions"),
-            ),
-        ];
-
-        let version = match fetch_latest_version(&modname, &client, &params).await {
-            Ok(url) => url,
-            Err(e) => {
-                eprintln!("Error: {}", e);
-                return Ok(());
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 {
+        if args[1] == "add" {
+            if args.len() > 2 {
+                println!("Starting add...");
+                let profile: Profile = read_config().await?;
+                let params = vec![
+                    (
+                        "loaders",
+                        serde_json::to_string(&[profile.loader])
+                            .expect("Failed to serialize loaders"),
+                    ),
+                    (
+                        "game_versions",
+                        serde_json::to_string(&[profile.gameversion])
+                            .expect("Failed to serialize game_versions"),
+                    ),
+                ];
+                let client = reqwest::Client::new();
+                let version = fetch_latest_version(&args[2], &client, &params).await?;
+                download_file(&profile.modsfolder, version.0, version.1, &client).await?;
             }
-        };
-
-        download_file(path, version.0, version.1, &client).await?;
-    } else if first == "test" {
-        println!("{}", generate_hash().await?);
+        }
     } else {
-        let url = "https://api.modrinth.com";
-
-        eprintln!("Fetching {url:?}...");
-
-        let res = client.get(url).send().await?.text().await?;
-
-        let parsed: SiteInfo = serde_json::from_str(&res).expect("Failed to parse JSON");
-        println!(
-            "{}\n{}\n{}\n{}",
-            parsed.about, parsed.documentation, parsed.name, parsed.version
-        );
+        println!("No arguments provided");
     }
     Ok(())
 }
