@@ -53,6 +53,16 @@ pub struct Config {
     pub profile: Vec<Profile>,
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            title: String::new(),
+            version: String::new(),
+            profile: Vec::new(),
+        }
+    }
+}
+
 #[derive(Deserialize, Debug)]
 pub struct Profile {
     pub active:         bool,
