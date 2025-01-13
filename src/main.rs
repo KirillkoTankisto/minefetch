@@ -1,9 +1,8 @@
-mod structs;
 mod consts;
+mod structs;
 
-use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{self, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 
-use std::io::Write;
 use std::result::Result;
 
 use structs::Config;
@@ -25,6 +24,41 @@ use inquire::Select;
 
 use inquire::ui::{Color, RenderConfig, Styled};
 
+/// Macro for async std output
+macro_rules! async_println {
+    ($($arg:tt)*) => {{
+        async {
+            let mut stdout = BufWriter::new(io::stdout());
+            if let Err(e) = stdout.write_all(format!($($arg)*).as_bytes()).await {
+                eprintln!("Error writing to stdout: {}", e)
+            }
+
+            if let Err(e) = stdout.write_all(format!("\n").as_bytes()).await {
+                eprintln!("Error writing to stdout: {}", e)
+            }
+
+            if let Err(e) = stdout.flush().await {
+                eprintln!("Error flushing stdout: {}", e)
+            }
+        }
+    }}
+}
+
+/// Macro for async std output (without \n)
+macro_rules! async_print {
+    ($($arg:tt)*) => {{
+        async {
+            let mut stdout = BufWriter::new(io::stdout());
+            if let Err(e) = stdout.write_all(format!($($arg)*).as_bytes()).await {
+                eprintln!("Error writing to stdout: {}", e)
+            }
+            if let Err(e) = stdout.flush().await {
+                eprintln!("Error flushing stdout: {}", e)
+            }
+        }
+    }}
+}
+
 /// The start of main async function
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -32,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.len() > 1 {
         if args[1] == "add" {
             if args.len() > 2 {
-                println!(":: Starting add...");
+                async_println!(":: Starting add...").await;
                 let profile: Profile = read_config().await?;
                 let params = vec![
                     (
@@ -48,16 +82,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ];
                 let client = reqwest::Client::new();
                 let modversion = fetch_latest_version(&args[2], &client, &params).await?;
-                download_file(&profile.modsfolder, modversion.0, modversion.1, &client).await?;
+                download_file(&profile.modsfolder, modversion.0, modversion.1, &client).await?
             } else {
-                println!(":: Usage: minefetch add <modname>");
+                async_println!(":: Usage: minefetch add <modname>").await
             }
+        } else if args[1] == "profile" {
+            if args.len() > 2 {
+                if args[2] == "create" {
+                    config_create().await?
+                }
+            } else {
+                async_println!(":: Usage: minefetch profile <create>").await
+            }
+        } else if args[1] == "version" {
+            async_println!(":: {} {}", NAME, PROGRAM_VERSION).await;
         } else if args[1] == "test" {
-            println!(":: test...");
-            config_create().await?;
+            async_println!(":: test...").await;
+            config_create().await?
         }
     } else {
-        println!(":: No arguments provided");
+        println!(":: No arguments provided")
     }
     Ok(())
 }
@@ -148,7 +192,7 @@ async fn read_config() -> Result<Profile, Box<dyn std::error::Error>> {
 
 /// Returns full Config
 async fn read_full_config() -> Result<Config, Box<dyn std::error::Error>> {
-    let home_dir = home::home_dir().ok_or("Couldn't find the home dir")?;
+    let home_dir = home::home_dir().ok_or(":wtf: Couldn't find the home dir")?;
     let config_path = home_dir
         .join(".config")
         .join("minefetch")
@@ -161,9 +205,7 @@ async fn read_full_config() -> Result<Config, Box<dyn std::error::Error>> {
 
 /// Config creation dialog
 async fn config_create() -> Result<(), Box<dyn std::error::Error>> {
-    print!(":: Press enter to choose mods directory");
-
-    std::io::stdout().flush().unwrap();
+    async_print!(":: Press enter to choose mods directory").await;
 
     press_enter().await?;
 
@@ -174,34 +216,26 @@ async fn config_create() -> Result<(), Box<dyn std::error::Error>> {
             folder_path = file
                 .path()
                 .to_str()
-                .ok_or_else(|| "Invalid UTF-8")
-                .unwrap()
+                .ok_or_else(|| "Invalid UTF-8")?
                 .to_string();
         }
         None => {
-            print!(":: Cannot launch the gui folder picker\n:: type mods folder path: ");
+            async_print!(
+                ":: Cannot launch the gui folder picker\n:: Enter the path to mods folder: "
+            )
+            .await;
             let mut buffer = String::new();
             std::io::stdin().read_line(&mut buffer)?;
             let folder_path_in_path = Path::new(buffer.trim());
             if !std::path::Path::exists(folder_path_in_path) {
-                println!("No folder with such name");
+                async_print!(":err: No folder with such name").await;
                 return Ok(());
             }
             folder_path = buffer.trim().to_string()
         }
     }
 
-    println!("{}", folder_path);
-
-    let mut buffer = String::new();
-
-    print!(":: Type a Minecraft version: ");
-
-    std::io::stdout().flush().unwrap();
-
-    std::io::stdin().read_line(&mut buffer)?;
-
-    let modversion = buffer.trim();
+    let modversion = ainput(":: Type a Minecraft version: ").await?;
 
     let loaders = vec![
         ("Quilt", "quilt"),
@@ -212,12 +246,17 @@ async fn config_create() -> Result<(), Box<dyn std::error::Error>> {
 
     let choices: Vec<_> = loaders.iter().map(|(label, _value)| label).collect();
 
-    let prompt_prefix = Styled::new("$").with_fg(Color::DarkRed);
-    let render_cfg: RenderConfig = RenderConfig::default().with_prompt_prefix(prompt_prefix);
+    let prompt_prefix = Styled::new("");
+    let option_prefix = Styled::new(">>").with_fg(Color::DarkGreen);
+    let render_cfg: RenderConfig = RenderConfig::empty()
+        .with_highlighted_option_prefix(option_prefix)
+        .with_prompt_prefix(prompt_prefix);
 
     let mut selected_value = String::new();
 
-    match Select::new("Choose a loader", choices)
+    match Select::new(":: Choose a loader\n", choices)
+        .without_filtering()
+        .without_help_message()
         .with_render_config(render_cfg)
         .prompt()
     {
@@ -225,50 +264,68 @@ async fn config_create() -> Result<(), Box<dyn std::error::Error>> {
             selected_value = loaders
                 .iter()
                 .find(|(label, _)| label == selection)
-                .map(|(_, value)| value)
-                .unwrap_or(&"Unknown")
-                .to_string();
+                .map(|(_, value)| value.to_string())
+                .ok_or_else(|| "Cannot translate pretty text to system one")?
         }
-        Err(_) => println!("Error"),
+        Err(_) => {
+            async_println!(":err: Why did you do that?").await;
+            std::process::exit(0)
+        }
     }
-    println!("{}", selected_value);
 
- 
+    let name = ainput(":: What should this profile be called? ").await?;
+
     let mut current_config = match read_full_config().await {
         Ok(cfg) => cfg,
-        Err(_) => {
-            println!("There's no config yet ((((");
-            return Ok(());
-        }
+        Err(_) => Config::default(),
     };
 
     let new_profile = Profile {
         active: true,
-        name: "name".to_string(),
+        name: name,
         modsfolder: folder_path,
-        gameversion: modversion.to_string(),
+        gameversion: modversion,
         loader: selected_value,
-        hash: generate_hash().await?
+        hash: generate_hash().await?,
     };
+
+    for obj in current_config.profile.iter_mut() {
+        obj.active = false;
+    }
 
     current_config.profile.push(new_profile);
 
-    let new_config = Config {
-        title: NAME.to_string(),
-        version: PROGRAM_VERSION.to_string(),
-        profile: current_config.profile,
-    };
+    let string_toml = toml::to_string(&current_config)?;
+
+    let home_dir = home::home_dir().ok_or("Couldn't find the home dir")?;
+    let config_path = home_dir
+        .join(".config")
+        .join("minefetch")
+        .join("config.toml");
+
+    tokio::fs::write(config_path, string_toml).await?;
 
     Ok(())
 }
 
 /// Press enter to continue functionality
 async fn press_enter() -> Result<(), tokio::io::Error> {
-    let mut stdinc = io::stdin();
+    let mut stdin = io::stdin();
 
     let mut buffer = [0u8; 1];
 
-    stdinc.read_exact(&mut buffer).await?;
+    stdin.read_exact(&mut buffer).await?;
 
     Ok(())
+}
+
+/// Reads user input and returns String
+async fn ainput(prompt: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let mut buffer = String::new();
+    let mut reader = BufReader::new(tokio::io::stdin());
+
+    async_print!("{}", prompt).await;
+    reader.read_line(&mut buffer).await?;
+
+    Ok(buffer.trim().to_string())
 }

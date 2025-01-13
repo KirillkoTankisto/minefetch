@@ -1,6 +1,6 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 pub struct SiteInfo {
     pub about: String,
     pub documentation: String,
@@ -8,13 +8,13 @@ pub struct SiteInfo {
     pub version: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 pub struct FileHashes {
     pub sha1: String,
     pub sha512: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 pub struct File {
     pub hashes: FileHashes,
     pub url: String,
@@ -24,7 +24,7 @@ pub struct File {
     pub file_type: Option<String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 pub struct Version {
     pub game_versions: Vec<String>,
     pub loaders: Vec<String>,
@@ -46,24 +46,20 @@ pub struct Version {
 
 pub type VersionsList = Vec<Version>;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize)]
 pub struct Config {
-    pub title: String,
-    pub version: String,
     pub profile: Vec<Profile>,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Config {
-            title: String::new(),
-            version: String::new(),
             profile: Vec::new(),
         }
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize)]
 pub struct Profile {
     pub active:         bool,
     pub name:           String,
