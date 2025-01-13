@@ -1,28 +1,23 @@
-mod consts;
-mod structs;
-
-use tokio::io::{self, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
-
+// Standard imports
+use std::path::Path;
 use std::result::Result;
 
-use structs::Config;
-use structs::Profile;
-use structs::VersionsList;
-
-use consts::*;
-
+// External crates
+use inquire::{
+    ui::{Color, RenderConfig, Styled},
+    Select,
+};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
-
-use serde_json;
-
 use rfd::AsyncFileDialog;
+use serde_json;
+use tokio::io::{self, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 
-use std::path::Path;
-
-use inquire::Select;
-
-use inquire::ui::{Color, RenderConfig, Styled};
+// Internal modules
+mod consts;
+mod structs;
+use consts::*;
+use structs::{Config, Profile, VersionsList};
 
 /// Macro for async std output
 macro_rules! async_println {
@@ -63,45 +58,34 @@ macro_rules! async_print {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() > 1 {
-        if args[1] == "add" {
-            if args.len() > 2 {
+    match args.get(1).map(String::as_str) {
+        Some("add") => match args.get(2).map(String::as_str) {
+            Some(s) => {
                 async_println!(":: Starting add...").await;
                 let profile: Profile = read_config().await?;
                 let params = vec![
-                    (
-                        "loaders",
-                        serde_json::to_string(&[profile.loader])
-                            .expect("Failed to serialize loaders"),
-                    ),
+                    ("loaders", serde_json::to_string(&[profile.loader])?),
                     (
                         "game_versions",
-                        serde_json::to_string(&[profile.gameversion])
-                            .expect("Failed to serialize game_versions"),
+                        serde_json::to_string(&[profile.gameversion])?,
                     ),
                 ];
                 let client = reqwest::Client::new();
-                let modversion = fetch_latest_version(&args[2], &client, &params).await?;
+                let modversion = fetch_latest_version(s, &client, &params).await?;
                 download_file(&profile.modsfolder, modversion.0, modversion.1, &client).await?
-            } else {
-                async_println!(":: Usage: minefetch add <modname>").await
             }
-        } else if args[1] == "profile" {
-            if args.len() > 2 {
-                if args[2] == "create" {
-                    config_create().await?
-                }
-            } else {
-                async_println!(":: Usage: minefetch profile <create>").await
-            }
-        } else if args[1] == "version" {
-            async_println!(":: {} {}", NAME, PROGRAM_VERSION).await;
-        } else if args[1] == "test" {
-            async_println!(":: test...").await;
-            config_create().await?
-        }
-    } else {
-        println!(":: No arguments provided")
+
+            _ => async_println!(":: Usage: minefetch add <modname>").await,
+        },
+
+        Some("profile") => match args.get(2).map(String::as_str) {
+            Some("create") => config_create().await?,
+            _ => async_println!(":: Usage: minefetch profile <create>").await,
+        },
+
+        Some("version") => async_println!(":: {} {}", NAME, PROGRAM_VERSION).await,
+
+        _ => async_println!(":: No arguments provided").await,
     }
     Ok(())
 }
@@ -209,31 +193,25 @@ async fn config_create() -> Result<(), Box<dyn std::error::Error>> {
 
     press_enter().await?;
 
-    let mut folder_path = String::new();
-
-    match AsyncFileDialog::new().pick_folder().await {
-        Some(file) => {
-            folder_path = file
-                .path()
-                .to_str()
-                .ok_or_else(|| "Invalid UTF-8")?
-                .to_string();
-        }
+    let folder_path = match AsyncFileDialog::new().pick_folder().await {
+        Some(file) => file
+            .path()
+            .to_str()
+            .ok_or_else(|| "Invalid UTF-8")?
+            .to_string(),
         None => {
-            async_print!(
-                ":: Cannot launch the gui folder picker\n:: Enter the path to mods folder: "
+            let buffer = ainput(
+                ":: Cannot launch the gui folder picker\n:: Enter the path to mods folder: ",
             )
-            .await;
-            let mut buffer = String::new();
-            std::io::stdin().read_line(&mut buffer)?;
-            let folder_path_in_path = Path::new(buffer.trim());
-            if !std::path::Path::exists(folder_path_in_path) {
+            .await?;
+            let path = Path::new(&buffer);
+            if !path.exists() {
                 async_print!(":err: No folder with such name").await;
                 return Ok(());
             }
-            folder_path = buffer.trim().to_string()
+            buffer.trim().to_string()
         }
-    }
+    };
 
     let modversion = ainput(":: Type a Minecraft version: ").await?;
 
@@ -252,26 +230,22 @@ async fn config_create() -> Result<(), Box<dyn std::error::Error>> {
         .with_highlighted_option_prefix(option_prefix)
         .with_prompt_prefix(prompt_prefix);
 
-    let mut selected_value = String::new();
-
-    match Select::new(":: Choose a loader\n", choices)
+    let selected_value = match Select::new(":: Choose a loader\n", choices)
         .without_filtering()
         .without_help_message()
         .with_render_config(render_cfg)
         .prompt()
     {
-        Ok(selection) => {
-            selected_value = loaders
-                .iter()
-                .find(|(label, _)| label == selection)
-                .map(|(_, value)| value.to_string())
-                .ok_or_else(|| "Cannot translate pretty text to system one")?
-        }
+        Ok(selection) => loaders
+            .iter()
+            .find(|(label, _)| label == selection)
+            .map(|(_, value)| value.to_string())
+            .ok_or_else(|| "Cannot translate pretty text to system one")?,
         Err(_) => {
             async_println!(":err: Why did you do that?").await;
             std::process::exit(0)
         }
-    }
+    };
 
     let name = ainput(":: What should this profile be called? ").await?;
 
