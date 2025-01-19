@@ -1,7 +1,7 @@
 // Standard imports
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::exit;
 use std::result::Result;
-
 // External crates
 use inquire::{
     ui::{Color, RenderConfig, Styled},
@@ -10,53 +10,21 @@ use inquire::{
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use rfd::AsyncFileDialog;
-use serde_json;
-use tokio::io::{self, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
+use serde_json::json;
+use serde_json::{self, Value};
+use tokio::io::{self, AsyncWriteExt, BufWriter};
 
 // Internal modules
 mod consts;
+mod mfio;
 mod structs;
 use consts::*;
-use structs::{Config, Profile, VersionsList};
-
-/// Macro for async std output
-macro_rules! async_println {
-    ($($arg:tt)*) => {{
-        async {
-            let mut stdout = BufWriter::new(io::stdout());
-            if let Err(e) = stdout.write_all(format!($($arg)*).as_bytes()).await {
-                eprintln!("Error writing to stdout: {}", e)
-            }
-
-            if let Err(e) = stdout.write_all(format!("\n").as_bytes()).await {
-                eprintln!("Error writing to stdout: {}", e)
-            }
-
-            if let Err(e) = stdout.flush().await {
-                eprintln!("Error flushing stdout: {}", e)
-            }
-        }
-    }}
-}
-
-/// Macro for async std output (without \n)
-macro_rules! async_print {
-    ($($arg:tt)*) => {{
-        async {
-            let mut stdout = BufWriter::new(io::stdout());
-            if let Err(e) = stdout.write_all(format!($($arg)*).as_bytes()).await {
-                eprintln!("Error writing to stdout: {}", e)
-            }
-            if let Err(e) = stdout.flush().await {
-                eprintln!("Error flushing stdout: {}", e)
-            }
-        }
-    }}
-}
+use mfio::*;
+use structs::{Config, Profile, Search, VersionsList};
 
 /// The start of main async function
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
         Some("add") => match args.get(2).map(String::as_str) {
@@ -72,7 +40,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ];
                 let client = reqwest::Client::new();
                 let modversion = fetch_latest_version(s, &client, &params).await?;
-                download_file(&profile.modsfolder, modversion.0, modversion.1, &client).await?
+                download_file(&profile.modsfolder, &modversion.0, &modversion.1, &client).await?;
+                async_println!(":: Downloaded {} ({})", &s, &modversion.0).await;
             }
 
             _ => async_println!(":: Usage: minefetch add <modname>").await,
@@ -80,10 +49,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         Some("profile") => match args.get(2).map(String::as_str) {
             Some("create") => config_create().await?,
+            Some("delete") => match args.get(3).map(String::as_str) {
+                Some("all") => profile_delete_all().await?,
+                _ => profile_delete().await?,
+            },
+            Some("switch") => profile_switch().await?,
             _ => async_println!(":: Usage: minefetch profile <create>").await,
         },
 
         Some("version") => async_println!(":: {} {}", NAME, PROGRAM_VERSION).await,
+
+        Some("search") => match args.get(2) {
+            Some(query) => {
+                let profile: Profile = read_config().await?;
+                let facets = json!([
+                    [format!("categories:{}", profile.loader)],
+                    [format!("versions:{}", profile.gameversion)],
+                    ["project_type:mod"],
+                ]);
+                let client = reqwest::Client::new();
+                let versions = mod_search(query, facets, &client).await?;
+                download_multiple_files(versions, &profile.modsfolder, &client).await?;
+            }
+            None => async_println!(":: Usage: minefetch search <query>").await,
+        },
 
         _ => async_println!(":: No arguments provided").await,
     }
@@ -95,7 +84,7 @@ async fn fetch_latest_version(
     modname: &str,
     client: &reqwest::Client,
     params: &[(&str, String)],
-) -> Result<(String, String), Box<dyn std::error::Error>> {
+) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
     let params: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
     let url = reqwest::Url::parse_with_params(
@@ -121,16 +110,56 @@ async fn fetch_latest_version(
     Ok((latest_parsed.filename.clone(), latest_parsed.url.clone()))
 }
 
+/// Mod search
+async fn mod_search(
+    query: &String,
+    facets: Value,
+    client: &reqwest::Client,
+) -> Result<Vec<(String, String)>, Box<dyn std::error::Error + Send + Sync>> {
+    let facets_string = facets.to_string();
+    let params = [("query", query.to_string()), ("facets", facets_string)];
+    let params: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let url = reqwest::Url::parse_with_params("https://api.modrinth.com/v2/search", &params)?;
+
+    let res = client
+        .get(url)
+        .header("User-Agent", "KirillkoTankisto")
+        .send()
+        .await?
+        .text()
+        .await?;
+    let parsed: Search = serde_json::from_str(&res)?;
+    for i in (0..parsed.hits.len()).rev() {
+        async_println!("[{}] {}", i + 1, parsed.hits.get(i).unwrap().title).await
+    }
+    let selected_string = ainput(":: Select mods to install: ").await?;
+    let selected_string = selected_string.split(" ");
+    let mut numbers: Vec<usize> = Vec::new();
+    for i in selected_string {
+        numbers.push(i.parse::<usize>().unwrap() - 1);
+    }
+    let params: Vec<(&str, String)> = params.iter().map(|(k, v)| (*k, v.to_string())).collect();
+    let mut version: Vec<(String, String)> = Vec::new();
+    for i in numbers {
+        let v = match parsed.hits.get(i) {
+            Some(a) => fetch_latest_version(&a.project_id, &client, &params).await?,
+            None => return Err("Cannot get such mod".into()),
+        };
+        version.push(v);
+    }
+    Ok(version)
+}
+
 /// Downloads single file
 async fn download_file(
     path: &str,
-    filename: String,
-    url: String,
+    filename: &str,
+    url: &str,
     client: &reqwest::Client,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tokio::fs::create_dir_all(path).await?;
 
-    let path = std::path::Path::new(path).join(filename);
+    let path = std::path::Path::new(path).join(&filename);
 
     let mut response = client.get(url).send().await?;
 
@@ -143,8 +172,52 @@ async fn download_file(
     Ok(())
 }
 
+async fn download_multiple_files(
+    files: Vec<(String, String)>,
+    path: &str,
+    client: &reqwest::Client,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut handles = Vec::new();
+    let base_path = Path::new(path);
+
+    for (filename, url) in files {
+        let client = client.clone();
+
+        let sanitized_path = PathBuf::from(base_path);
+
+        if !sanitized_path.starts_with(base_path) {
+            eprintln!(
+                "Potential path traversal attack detected: {:?}",
+                sanitized_path
+            );
+            continue;
+        }
+
+        let handle = tokio::spawn(async move {
+            async_println!(":: Downloading {}", &filename).await;
+            download_file(
+                sanitized_path.to_str().unwrap_or_default(),
+                &filename,
+                &url,
+                &client,
+            )
+            .await
+        });
+
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        if let Err(e) = handle.await {
+            eprintln!("Task panicked: {:?}", e);
+        }
+    }
+
+    Ok(())
+}
+
 /// Generates random 64 char string
-async fn generate_hash() -> Result<String, Box<dyn std::error::Error>> {
+async fn generate_hash() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let random_hash = tokio::task::spawn_blocking(|| {
         rand::thread_rng()
             .sample_iter(&Alphanumeric)
@@ -157,7 +230,7 @@ async fn generate_hash() -> Result<String, Box<dyn std::error::Error>> {
 }
 
 /// Returns single active Profile
-async fn read_config() -> Result<Profile, Box<dyn std::error::Error>> {
+async fn read_config() -> Result<Profile, Box<dyn std::error::Error + Send + Sync>> {
     let home_dir = home::home_dir().ok_or("Couldn't find the home dir")?;
     let config_path = home_dir
         .join(".config")
@@ -175,7 +248,7 @@ async fn read_config() -> Result<Profile, Box<dyn std::error::Error>> {
 }
 
 /// Returns full Config
-async fn read_full_config() -> Result<Config, Box<dyn std::error::Error>> {
+async fn read_full_config() -> Result<Config, Box<dyn std::error::Error + Send + Sync>> {
     let home_dir = home::home_dir().ok_or(":wtf: Couldn't find the home dir")?;
     let config_path = home_dir
         .join(".config")
@@ -188,12 +261,12 @@ async fn read_full_config() -> Result<Config, Box<dyn std::error::Error>> {
 }
 
 /// Config creation dialog
-async fn config_create() -> Result<(), Box<dyn std::error::Error>> {
+async fn config_create() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     async_print!(":: Press enter to choose mods directory").await;
 
     press_enter().await?;
 
-    let folder_path = match AsyncFileDialog::new().pick_folder().await {
+    let modsfolder = match AsyncFileDialog::new().pick_folder().await {
         Some(file) => file
             .path()
             .to_str()
@@ -213,7 +286,7 @@ async fn config_create() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let modversion = ainput(":: Type a Minecraft version: ").await?;
+    let gameversion = ainput(":: Type a Minecraft version: ").await?;
 
     let loaders = vec![
         ("Quilt", "quilt"),
@@ -230,7 +303,7 @@ async fn config_create() -> Result<(), Box<dyn std::error::Error>> {
         .with_highlighted_option_prefix(option_prefix)
         .with_prompt_prefix(prompt_prefix);
 
-    let selected_value = match Select::new(":: Choose a loader\n", choices)
+    let loader = match Select::new(":: Choose a loader\n", choices)
         .without_filtering()
         .without_help_message()
         .with_render_config(render_cfg)
@@ -243,7 +316,7 @@ async fn config_create() -> Result<(), Box<dyn std::error::Error>> {
             .ok_or_else(|| "Cannot translate pretty text to system one")?,
         Err(_) => {
             async_println!(":err: Why did you do that?").await;
-            std::process::exit(0)
+            exit(0)
         }
     };
 
@@ -256,10 +329,10 @@ async fn config_create() -> Result<(), Box<dyn std::error::Error>> {
 
     let new_profile = Profile {
         active: true,
-        name: name,
-        modsfolder: folder_path,
-        gameversion: modversion,
-        loader: selected_value,
+        name,
+        modsfolder,
+        gameversion,
+        loader,
         hash: generate_hash().await?,
     };
 
@@ -282,24 +355,134 @@ async fn config_create() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Press enter to continue functionality
-async fn press_enter() -> Result<(), tokio::io::Error> {
-    let mut stdin = io::stdin();
+/// Deletes one selected profile
+async fn profile_delete() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut config = match read_full_config().await {
+        Ok(cfg) => cfg,
+        Err(_) => {
+            async_println!("There's no config yet").await;
+            return Ok(());
+        }
+    };
 
-    let mut buffer = [0u8; 1];
+    let profiles: Vec<(String, String)> = config
+        .profile
+        .iter()
+        .map(|i| (i.name.clone(), i.hash.clone()))
+        .collect();
 
-    stdin.read_exact(&mut buffer).await?;
+    let choices: Vec<_> = profiles.iter().map(|(label, _)| label).collect();
+
+    let prompt_prefix = Styled::new("");
+    let option_prefix = Styled::new(">>").with_fg(Color::DarkGreen);
+    let render_cfg: RenderConfig = RenderConfig::empty()
+        .with_highlighted_option_prefix(option_prefix)
+        .with_prompt_prefix(prompt_prefix);
+
+    let selected_value = match Select::new(":: Which profile to delete?\n", choices.clone())
+        .without_filtering()
+        .without_help_message()
+        .with_render_config(render_cfg)
+        .prompt()
+    {
+        Ok(selection) => profiles
+            .iter()
+            .find(|(label, _)| &*label == selection) // Notice the dereference here
+            .map(|(_, value)| value.clone())
+            .ok_or_else(|| "Cannot translate pretty text to system one")
+            .unwrap(),
+        Err(_) => {
+            async_println!(":err: Why did you do that?").await;
+            exit(0)
+        }
+    };
+
+    async_println!("{}", selected_value).await;
+
+    config
+        .profile
+        .retain(|profile| profile.hash != selected_value);
+
+    let string_toml = toml::to_string(&config)?;
+    let home_dir = home::home_dir().ok_or("Couldn't find the home dir")?;
+    let config_path = home_dir
+        .join(".config")
+        .join("minefetch")
+        .join("config.toml");
+
+    tokio::fs::write(config_path, string_toml).await?;
 
     Ok(())
 }
 
-/// Reads user input and returns String
-async fn ainput(prompt: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let mut buffer = String::new();
-    let mut reader = BufReader::new(tokio::io::stdin());
+/// Deletes config file completely
+async fn profile_delete_all() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let home_dir = home::home_dir().ok_or("Couldn't find the home dir")?;
+    let config_path = home_dir
+        .join(".config")
+        .join("minefetch")
+        .join("config.toml");
+    tokio::fs::remove_file(config_path).await?;
+    Ok(())
+}
 
-    async_print!("{}", prompt).await;
-    reader.read_line(&mut buffer).await?;
+/// Switches profile to selected one
+async fn profile_switch() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut config = match read_full_config().await {
+        Ok(cfg) => cfg,
+        Err(_) => {
+            async_println!("There's no config yet").await;
+            return Ok(());
+        }
+    };
 
-    Ok(buffer.trim().to_string())
+    let profiles: Vec<(String, String)> = config
+        .profile
+        .iter()
+        .map(|i| (i.name.clone(), i.hash.clone()))
+        .collect();
+
+    let choices: Vec<_> = profiles.iter().map(|(label, _)| label).collect();
+
+    let prompt_prefix = Styled::new("");
+    let option_prefix = Styled::new(">>").with_fg(Color::DarkGreen);
+    let render_cfg: RenderConfig = RenderConfig::empty()
+        .with_highlighted_option_prefix(option_prefix)
+        .with_prompt_prefix(prompt_prefix);
+
+    let selected_value = match Select::new(":: Which profile to switch to?\n", choices.clone())
+        .without_filtering()
+        .without_help_message()
+        .with_render_config(render_cfg)
+        .prompt()
+    {
+        Ok(selection) => profiles
+            .iter()
+            .find(|(label, _)| &*label == selection) // Notice the dereference here
+            .map(|(_, value)| value.clone())
+            .ok_or_else(|| "Cannot translate pretty text to system one")
+            .unwrap(),
+        Err(_) => {
+            async_println!(":err: Why did you do that?").await;
+            exit(0)
+        }
+    };
+    for obj in config.profile.iter_mut() {
+        if obj.hash == selected_value {
+            obj.active = true
+        } else {
+            obj.active = false;
+        }
+    }
+
+    let string_toml = toml::to_string(&config)?;
+    let home_dir = home::home_dir().ok_or("Couldn't find the home dir")?;
+    let config_path = home_dir
+        .join(".config")
+        .join("minefetch")
+        .join("config.toml");
+
+    tokio::fs::write(config_path, string_toml).await?;
+
+    Ok(())
 }

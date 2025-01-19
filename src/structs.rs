@@ -61,10 +61,20 @@ impl Default for Config {
 
 #[derive(Deserialize, Serialize)]
 pub struct Profile {
-    pub active:         bool,
-    pub name:           String,
-    pub modsfolder:     String,
-    pub gameversion:    String,
-    pub loader:         String,
-    pub hash:           String,
+    pub active: bool,
+    pub name: String,
+    pub modsfolder: String,
+    pub gameversion: String,
+    pub loader: String,
+    pub hash: String,
+}
+#[derive(Deserialize)]
+pub struct Search {
+    pub hits: Vec<Object>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Object {
+    pub project_id: String,
+    pub title: String,
 }
