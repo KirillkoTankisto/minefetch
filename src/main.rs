@@ -24,7 +24,7 @@ use consts::*;
 use mfio::*;
 use structs::{Config, Hash, MFHashMap, Profile, Search, VersionsList};
 
-/// The start of main async function
+/// The start of the main async function
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args: Vec<String> = std::env::args().collect();
@@ -34,9 +34,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 async_println!(":: Starting add...").await;
                 let profile: Profile = read_config().await?;
                 let params = vec![
-                    ("loaders", serde_json::to_string(&[profile.loader])?),
                     (
-                        "game_versions",
+                        "loaders".to_string(),
+                        serde_json::to_string(&[profile.loader])?,
+                    ),
+                    (
+                        "game_versions".to_string(),
                         serde_json::to_string(&[profile.gameversion])?,
                     ),
                 ];
@@ -57,7 +60,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             },
             Some("switch") => profile_switch().await?,
             Some("list") => profile_list().await?,
-            _ => async_println!(":: Usage: minefetch profile <create>").await,
+            _ => {
+                async_println!(":: Usage: minefetch profile <create|delete|delete all|switch|list>")
+                    .await
+            }
         },
 
         Some("version") => async_println!(":: {} {}", NAME, PROGRAM_VERSION).await,
@@ -70,24 +76,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     [format!("versions:{}", profile.gameversion)],
                     ["project_type:mod"],
                 ]);
-                let fetch_params = vec![
-                    ("loaders", serde_json::to_string(&[profile.loader])?),
+                let fetch_params: Vec<(String, String)> = vec![
                     (
-                        "game_versions",
+                        "loaders".to_string(),
+                        serde_json::to_string(&[profile.loader])?,
+                    ),
+                    (
+                        "game_versions".to_string(),
                         serde_json::to_string(&[profile.gameversion])?,
                     ),
                 ];
                 let client = reqwest::Client::new();
-                let versions = mod_search(query, facets, &client, &fetch_params).await?;
-                download_multiple_files(versions, &profile.modsfolder, &client).await?;
+                let files = mod_search(query, facets, &client, &fetch_params).await?;
+                download_multiple_files(files, &profile.modsfolder, &client).await?;
             }
             None => async_println!(":: Usage: minefetch search <query>").await,
         },
 
-        /*Some("test") => {
-            upgrade().await?;
+        Some("upgrade") | Some("update") => {
+            let profile: Profile = read_config().await?;
+            let files = upgrade(&profile).await?;
+            let client = reqwest::Client::new();
+            download_multiple_files(files, &profile.modsfolder, &client).await?;
         }
-        */
+
         Some(_) => async_println!(":: There is no such a command!").await,
 
         None => async_println!(":: No arguments provided").await,
@@ -99,9 +111,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 async fn fetch_latest_version(
     modname: &str,
     client: &reqwest::Client,
-    params: &[(&str, String)],
+    params: &[(String, String)],
 ) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
-    let params: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let params: Vec<(String, String)> =
+        params.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
     let url = reqwest::Url::parse_with_params(
         &format!("https://api.modrinth.com/v2/project/{}/version", modname),
@@ -134,7 +147,7 @@ async fn mod_search(
     query: &String,
     facets: Value,
     client: &reqwest::Client,
-    fetch_params: &[(&str, String)],
+    fetch_params: &[(String, String)],
 ) -> Result<Vec<(String, String)>, Box<dyn std::error::Error + Send + Sync>> {
     let facets_string = facets.to_string();
     let params = [("query", query.to_string()), ("facets", facets_string)];
@@ -148,19 +161,21 @@ async fn mod_search(
         .await?
         .text()
         .await?;
+
     let parsed: Search = serde_json::from_str(&res)?;
     for i in (0..parsed.hits.len()).rev() {
         async_println!("[{}] {}", i + 1, parsed.hits.get(i).unwrap().title).await
     }
+
     let selected_string = ainput(":: Select mods to install: ").await?;
-    let selected_string = selected_string.split(" ");
+    let selected_string = selected_string.split(' ');
     let mut numbers: Vec<usize> = Vec::new();
     for i in selected_string {
         numbers.push(i.parse::<usize>().unwrap() - 1);
     }
-    let fetch_params: Vec<(&str, String)> = fetch_params
+    let fetch_params: Vec<(String, String)> = fetch_params
         .iter()
-        .map(|(k, v)| (*k, v.to_string()))
+        .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     let mut version: Vec<(String, String)> = Vec::new();
     for i in numbers {
@@ -195,6 +210,7 @@ async fn download_file(
     Ok(())
 }
 
+/// Downloads multiple files
 async fn download_multiple_files(
     files: Vec<(String, String)>,
     path: &str,
@@ -283,7 +299,7 @@ async fn read_full_config() -> Result<Config, Box<dyn std::error::Error + Send +
     Ok(config)
 }
 
-/// Config creation dialog
+/// Creates config file
 async fn config_create() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     async_print!(":: Press enter to choose mods directory").await;
 
@@ -510,6 +526,7 @@ async fn profile_switch() -> Result<(), Box<dyn std::error::Error + Send + Sync>
     Ok(())
 }
 
+/// Lists all profiles
 async fn profile_list() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = read_full_config().await?;
     for i in config.profile {
@@ -536,10 +553,10 @@ async fn profile_list() -> Result<(), Box<dyn std::error::Error + Send + Sync>> 
     Ok(())
 }
 
-// Not done yet
-/*
-async fn upgrade() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let profile = read_config().await?;
+/// Updates mods to the latest version
+async fn upgrade(
+    profile: &Profile,
+) -> Result<Vec<(String, String)>, Box<dyn std::error::Error + Send + Sync>> {
     let hashes = get_hashes(&profile.modsfolder).await?;
     let hashes = Hash {
         hashes,
@@ -561,19 +578,48 @@ async fn upgrade() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .text()
         .await?;
 
-    async_println!("{}", res.as_str()).await;
-    // Parse the response
     let mut versions: MFHashMap = serde_json::from_str(&res)?;
-    for i in hashes.hashes {
-        if i ==v
-    }
+    let mut keys_to_remove = Vec::new();
     for (_, i) in &versions {
-        async_println!("sex here {}", i.name).await;
+        let file = i
+            .files
+            .iter()
+            .find(|v| v.primary)
+            .ok_or("No primary file found")?;
+        if hashes.hashes.contains(&file.hashes.sha1) {
+            keys_to_remove.push(file.hashes.sha1.clone());
+        }
     }
 
-    Ok(())
+    for key in keys_to_remove {
+        versions.remove(&key);
+    }
+
+    for (_, i) in &versions {
+        async_println!("{}", i.name).await;
+    }
+
+    let mut version: Vec<(String, String)> = Vec::new();
+
+    let mut hashes_to_remove = Vec::new();
+
+    for (s, v) in &versions {
+        let files = v
+            .files
+            .iter()
+            .find(|v| v.primary)
+            .ok_or("No primary file found")?;
+        let file: (String, String) = (files.filename.clone(), files.url.clone());
+        version.push(file);
+        hashes_to_remove.push(s.clone())
+    }
+
+    remove_mods_by_hash(&profile.modsfolder, &hashes_to_remove).await?;
+
+    Ok(version)
 }
 
+/// Returns Vec<String> of hashes in given path
 async fn get_hashes(path: &str) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
     let mut entries = tokio::fs::read_dir(path).await?;
 
@@ -601,6 +647,7 @@ async fn get_hashes(path: &str) -> Result<Vec<String>, Box<dyn std::error::Error
     Ok(hashes)
 }
 
+/// Calculates hash of a file
 async fn calculate_sha1<P: AsRef<Path>>(path: P) -> io::Result<String> {
     let mut file = tokio::fs::File::open(&path).await?;
     let mut hasher = Sha1::new();
@@ -616,4 +663,23 @@ async fn calculate_sha1<P: AsRef<Path>>(path: P) -> io::Result<String> {
 
     Ok(format!("{:x}", hasher.finalize()))
 }
-*/
+
+/// Deletes files in folder with same hash
+async fn remove_mods_by_hash(
+    modsfolder: &str,
+    hashes_to_remove: &[String],
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut entries = tokio::fs::read_dir(modsfolder).await?;
+
+    while let Some(entry) = entries.next_entry().await? {
+        let path = entry.path();
+        if path.is_file() {
+            let file_hash = calculate_sha1(&path).await?;
+            if hashes_to_remove.contains(&file_hash) {
+                tokio::fs::remove_file(&path).await?;
+            }
+        }
+    }
+
+    Ok(())
+}

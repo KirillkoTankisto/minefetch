@@ -9,13 +9,13 @@ pub struct SiteInfo {
     pub version: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct FileHashes {
     pub sha1: String,
     pub sha512: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct File {
     pub hashes: FileHashes,
     pub url: String,
