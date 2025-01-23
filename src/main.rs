@@ -100,7 +100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             download_multiple_files(files, &profile.modsfolder, &client).await?;
         }
 
-        Some(_) => async_println!(":: There is no such a command!").await,
+        Some(_) => async_println!(":: There is no such command!").await,
 
         None => async_println!(":: No arguments provided").await,
     }
@@ -399,7 +399,7 @@ async fn profile_delete() -> Result<(), Box<dyn std::error::Error + Send + Sync>
     let mut config = match read_full_config().await {
         Ok(cfg) => cfg,
         Err(_) => {
-            async_println!(":: There's no config yet").await;
+            async_println!(":: There's no config yet, type minefetch profile create").await;
             return Ok(());
         }
     };
@@ -456,6 +456,13 @@ async fn profile_delete() -> Result<(), Box<dyn std::error::Error + Send + Sync>
 
 /// Deletes config file completely
 async fn profile_delete_all() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    match read_full_config().await {
+        Ok(cfg) => cfg,
+        Err(_) => {
+            async_println!(":: There's no config yet, type minefetch profile create").await;
+            return Ok(());
+        }
+    };
     let home_dir = home::home_dir().ok_or("Couldn't find the home dir")?;
     let config_path = home_dir
         .join(".config")
@@ -470,7 +477,7 @@ async fn profile_switch() -> Result<(), Box<dyn std::error::Error + Send + Sync>
     let mut config = match read_full_config().await {
         Ok(cfg) => cfg,
         Err(_) => {
-            async_println!(":: There's no config yet").await;
+            async_println!(":: There's no config yet, type minefetch profile create").await;
             return Ok(());
         }
     };
@@ -478,7 +485,20 @@ async fn profile_switch() -> Result<(), Box<dyn std::error::Error + Send + Sync>
     let profiles: Vec<(String, String)> = config
         .profile
         .iter()
-        .map(|i| (i.name.clone(), i.hash.clone()))
+        .map(|i| {
+            let name = if i.active {
+                format!(
+                    "* {} [{} {}] [{}]",
+                    i.name, i.loader, i.gameversion, i.modsfolder
+                )
+            } else {
+                format!(
+                    "  {} [{} {}] [{}]",
+                    i.name, i.loader, i.gameversion, i.modsfolder
+                )
+            };
+            (name, i.hash.clone())
+        })
         .collect();
 
     let choices: Vec<_> = profiles.iter().map(|(label, _)| label).collect();
@@ -528,7 +548,13 @@ async fn profile_switch() -> Result<(), Box<dyn std::error::Error + Send + Sync>
 
 /// Lists all profiles
 async fn profile_list() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let config = read_full_config().await?;
+    let config = match read_full_config().await {
+        Ok(cfg) => cfg,
+        Err(_) => {
+            async_println!(":: There's no config yet, type minefetch profile create").await;
+            return Ok(());
+        }
+    };
     for i in config.profile {
         if i.active {
             async_println!(
@@ -593,10 +619,6 @@ async fn upgrade(
 
     for key in keys_to_remove {
         versions.remove(&key);
-    }
-
-    for (_, i) in &versions {
-        async_println!("{}", i.name).await;
     }
 
     let mut version: Vec<(String, String)> = Vec::new();
