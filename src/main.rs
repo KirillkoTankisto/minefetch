@@ -2,6 +2,7 @@
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::result::Result;
+use std::vec;
 // External crates
 use inquire::{
     ui::{Color, RenderConfig, Styled},
@@ -12,7 +13,8 @@ use rand::Rng;
 use rfd::AsyncFileDialog;
 use serde_json::json;
 use serde_json::{self, Value};
-use tokio::io::{self, AsyncWriteExt, BufWriter};
+use sha1::{Digest, Sha1};
+use tokio::io::{self, AsyncReadExt, AsyncWriteExt, BufWriter};
 
 // Internal modules
 mod consts;
@@ -20,7 +22,7 @@ mod mfio;
 mod structs;
 use consts::*;
 use mfio::*;
-use structs::{Config, Profile, Search, VersionsList};
+use structs::{Config, Hash, MFHashMap, Profile, Search, VersionsList};
 
 /// The start of main async function
 #[tokio::main]
@@ -54,6 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 _ => profile_delete().await?,
             },
             Some("switch") => profile_switch().await?,
+            Some("list") => profile_list().await?,
             _ => async_println!(":: Usage: minefetch profile <create>").await,
         },
 
@@ -67,14 +70,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     [format!("versions:{}", profile.gameversion)],
                     ["project_type:mod"],
                 ]);
+                let fetch_params = vec![
+                    ("loaders", serde_json::to_string(&[profile.loader])?),
+                    (
+                        "game_versions",
+                        serde_json::to_string(&[profile.gameversion])?,
+                    ),
+                ];
                 let client = reqwest::Client::new();
-                let versions = mod_search(query, facets, &client).await?;
+                let versions = mod_search(query, facets, &client, &fetch_params).await?;
                 download_multiple_files(versions, &profile.modsfolder, &client).await?;
             }
             None => async_println!(":: Usage: minefetch search <query>").await,
         },
 
-        _ => async_println!(":: No arguments provided").await,
+        /*Some("test") => {
+            upgrade().await?;
+        }
+        */
+        Some(_) => async_println!(":: There is no such a command!").await,
+
+        None => async_println!(":: No arguments provided").await,
     }
     Ok(())
 }
@@ -102,12 +118,15 @@ async fn fetch_latest_version(
 
     let parsed: VersionsList = serde_json::from_str(&res)?;
 
-    let latest_parsed = parsed
-        .get(0)
-        .and_then(|v| v.files.get(0))
-        .ok_or(":: No version available")?;
+    let version = parsed.get(0).ok_or("No versions available")?;
 
-    Ok((latest_parsed.filename.clone(), latest_parsed.url.clone()))
+    let file = version
+        .files
+        .iter()
+        .find(|file| file.primary)
+        .ok_or("No primary file found")?;
+
+    Ok((file.filename.clone(), file.url.clone()))
 }
 
 /// Mod search
@@ -115,6 +134,7 @@ async fn mod_search(
     query: &String,
     facets: Value,
     client: &reqwest::Client,
+    fetch_params: &[(&str, String)],
 ) -> Result<Vec<(String, String)>, Box<dyn std::error::Error + Send + Sync>> {
     let facets_string = facets.to_string();
     let params = [("query", query.to_string()), ("facets", facets_string)];
@@ -138,11 +158,14 @@ async fn mod_search(
     for i in selected_string {
         numbers.push(i.parse::<usize>().unwrap() - 1);
     }
-    let params: Vec<(&str, String)> = params.iter().map(|(k, v)| (*k, v.to_string())).collect();
+    let fetch_params: Vec<(&str, String)> = fetch_params
+        .iter()
+        .map(|(k, v)| (*k, v.to_string()))
+        .collect();
     let mut version: Vec<(String, String)> = Vec::new();
     for i in numbers {
         let v = match parsed.hits.get(i) {
-            Some(a) => fetch_latest_version(&a.project_id, &client, &params).await?,
+            Some(a) => fetch_latest_version(&a.project_id, &client, &fetch_params).await?,
             None => return Err("Cannot get such mod".into()),
         };
         version.push(v);
@@ -244,7 +267,7 @@ async fn read_config() -> Result<Profile, Box<dyn std::error::Error + Send + Syn
         .profile
         .into_iter()
         .find(|p| p.active)
-        .ok_or_else(|| "No active profile found".into())
+        .ok_or_else(|| ":: No active profile found".into())
 }
 
 /// Returns full Config
@@ -360,7 +383,7 @@ async fn profile_delete() -> Result<(), Box<dyn std::error::Error + Send + Sync>
     let mut config = match read_full_config().await {
         Ok(cfg) => cfg,
         Err(_) => {
-            async_println!("There's no config yet").await;
+            async_println!(":: There's no config yet").await;
             return Ok(());
         }
     };
@@ -389,7 +412,7 @@ async fn profile_delete() -> Result<(), Box<dyn std::error::Error + Send + Sync>
             .iter()
             .find(|(label, _)| &*label == selection) // Notice the dereference here
             .map(|(_, value)| value.clone())
-            .ok_or_else(|| "Cannot translate pretty text to system one")
+            .ok_or_else(|| ":err: Cannot translate pretty text to system one")
             .unwrap(),
         Err(_) => {
             async_println!(":err: Why did you do that?").await;
@@ -431,7 +454,7 @@ async fn profile_switch() -> Result<(), Box<dyn std::error::Error + Send + Sync>
     let mut config = match read_full_config().await {
         Ok(cfg) => cfg,
         Err(_) => {
-            async_println!("There's no config yet").await;
+            async_println!(":: There's no config yet").await;
             return Ok(());
         }
     };
@@ -460,7 +483,7 @@ async fn profile_switch() -> Result<(), Box<dyn std::error::Error + Send + Sync>
             .iter()
             .find(|(label, _)| &*label == selection) // Notice the dereference here
             .map(|(_, value)| value.clone())
-            .ok_or_else(|| "Cannot translate pretty text to system one")
+            .ok_or_else(|| ":err: Cannot translate pretty text to system one")
             .unwrap(),
         Err(_) => {
             async_println!(":err: Why did you do that?").await;
@@ -486,3 +509,111 @@ async fn profile_switch() -> Result<(), Box<dyn std::error::Error + Send + Sync>
 
     Ok(())
 }
+
+async fn profile_list() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let config = read_full_config().await?;
+    for i in config.profile {
+        if i.active {
+            async_println!(
+                "* {} [{} {}] [{}]",
+                i.name,
+                i.loader,
+                i.gameversion,
+                i.modsfolder
+            )
+            .await
+        } else {
+            async_println!(
+                "  {} [{} {}] [{}]",
+                i.name,
+                i.loader,
+                i.gameversion,
+                i.modsfolder
+            )
+            .await
+        }
+    }
+    Ok(())
+}
+
+// Not done yet
+/*
+async fn upgrade() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let profile = read_config().await?;
+    let hashes = get_hashes(&profile.modsfolder).await?;
+    let hashes = Hash {
+        hashes,
+        algorithm: "sha1".to_string(),
+        loaders: vec![profile.loader.to_string()],
+        game_versions: vec![profile.gameversion.to_string()],
+    };
+    let hashes_send = serde_json::to_string(&hashes)?;
+
+    let client = reqwest::Client::new();
+    let url = "https://api.modrinth.com/v2/version_files/update";
+    let res = client
+        .post(url)
+        .header("User-Agent", "KirillkoTankisto")
+        .header("Content-Type", "application/json")
+        .body(hashes_send)
+        .send()
+        .await?
+        .text()
+        .await?;
+
+    async_println!("{}", res.as_str()).await;
+    // Parse the response
+    let mut versions: MFHashMap = serde_json::from_str(&res)?;
+    for i in hashes.hashes {
+        if i ==v
+    }
+    for (_, i) in &versions {
+        async_println!("sex here {}", i.name).await;
+    }
+
+    Ok(())
+}
+
+async fn get_hashes(path: &str) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
+    let mut entries = tokio::fs::read_dir(path).await?;
+
+    let mut hashes: Vec<String> = Vec::new();
+
+    let mut tasks = vec![];
+
+    while let Some(entry) = entries.next_entry().await? {
+        let path = entry.path();
+        if path.is_file() {
+            tasks.push(tokio::task::spawn(async move {
+                let hash = calculate_sha1(&path).await;
+                hash
+            }));
+        }
+    }
+
+    for task in tasks {
+        match task.await {
+            Ok(Ok(hash)) => hashes.push(hash),
+            Ok(Err(e)) => eprintln!("Error processing hash: {e}"),
+            Err(e) => eprintln!("Task error: {e}"),
+        }
+    }
+    Ok(hashes)
+}
+
+async fn calculate_sha1<P: AsRef<Path>>(path: P) -> io::Result<String> {
+    let mut file = tokio::fs::File::open(&path).await?;
+    let mut hasher = Sha1::new();
+    let mut buffer = vec![0; 8192];
+
+    loop {
+        let bytes_read = file.read(&mut buffer).await?;
+        if bytes_read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes_read]);
+    }
+
+    Ok(format!("{:x}", hasher.finalize()))
+}
+*/

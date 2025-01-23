@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Deserialize)]
 pub struct SiteInfo {
@@ -46,6 +47,8 @@ pub struct Version {
 
 pub type VersionsList = Vec<Version>;
 
+pub type MFHashMap = HashMap<String, Version>;
+
 #[derive(Deserialize, Serialize)]
 pub struct Config {
     pub profile: Vec<Profile>,
@@ -73,8 +76,16 @@ pub struct Search {
     pub hits: Vec<Object>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 pub struct Object {
     pub project_id: String,
     pub title: String,
+}
+
+#[derive(Serialize)]
+pub struct Hash {
+    pub hashes: Vec<String>,
+    pub algorithm: String,
+    pub loaders: Vec<String>,
+    pub game_versions: Vec<String>,
 }
