@@ -86,6 +86,6 @@ pub struct Object {
 pub struct Hash {
     pub hashes: Vec<String>,
     pub algorithm: String,
-    pub loaders: Vec<String>,
-    pub game_versions: Vec<String>,
+    pub loaders: Option<Vec<String>>,
+    pub game_versions: Option<Vec<String>>,
 }

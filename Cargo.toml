@@ -1,6 +1,6 @@
 [package]
 name = "minefetch"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2021"
 
 [dependencies]
@@ -17,8 +17,7 @@ inquire = "0.7.5"
 sha1 = "0.10.6"
 
 [profile.release]
-strip = true  # Automatically strip symbols from the binary.
+strip = true
 lto = true
 codegen-units = 1
-panic = "abort"
-opt-level = "z"
+opt-level = 3

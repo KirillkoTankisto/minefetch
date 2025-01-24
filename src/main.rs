@@ -98,7 +98,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let files = upgrade(&profile).await?;
             let client = reqwest::Client::new();
             download_multiple_files(files, &profile.modsfolder, &client).await?;
-        }
+        },
+        
+        Some("list") => {
+            let profile: Profile = read_config().await?;
+            let client = reqwest::Client::new();
+            list_mods(&profile, &client).await?;
+        },
 
         Some(_) => async_println!(":: There is no such command!").await,
 
@@ -587,8 +593,8 @@ async fn upgrade(
     let hashes = Hash {
         hashes,
         algorithm: "sha1".to_string(),
-        loaders: vec![profile.loader.to_string()],
-        game_versions: vec![profile.gameversion.to_string()],
+        loaders: Some(vec![profile.loader.to_string()]),
+        game_versions: Some(vec![profile.gameversion.to_string()]),
     };
     let hashes_send = serde_json::to_string(&hashes)?;
 
@@ -666,6 +672,9 @@ async fn get_hashes(path: &str) -> Result<Vec<String>, Box<dyn std::error::Error
             Err(e) => eprintln!("Task error: {e}"),
         }
     }
+    if hashes.is_empty() {
+        return Err("No valid entries found to calculate hashes".into());
+    }
     Ok(hashes)
 }
 
@@ -703,5 +712,42 @@ async fn remove_mods_by_hash(
         }
     }
 
+    Ok(())
+}
+
+/// Lists mods in selected profile
+async fn list_mods(profile: &Profile, client: &reqwest::Client) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let hashes = Hash {
+        hashes: match get_hashes(&profile.modsfolder).await {
+            Ok(hashes) => hashes,
+            Err(_) => {
+                async_println!(":: There are no mods yet").await;
+                return Ok(());
+            }
+        },
+        algorithm: "sha1".to_string(),
+        loaders: None,
+        game_versions: None
+    };
+    let hashes_send = serde_json::to_string(&hashes)?;
+    
+    let url = "https://api.modrinth.com/v2/version_files";
+    let res = client
+        .post(url)
+        .header("User-Agent", "KirillkoTankisto")
+        .header("Content-Type", "application/json")
+        .body(hashes_send)
+        .send()
+        .await?
+        .text()
+        .await?;
+
+    let versions: MFHashMap = serde_json::from_str(&res)?;
+    async_println!(":: There are {} mods in profile {}:", versions.len(), profile.name).await;
+    let mut a: u32 = 1;
+    for (_, i) in versions {
+        async_println!("[{}] {}", a, i.name).await;
+        a += 1
+    }
     Ok(())
 }
