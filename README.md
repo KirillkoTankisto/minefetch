@@ -46,6 +46,11 @@ minefetch update
 or
 minefetch upgrade
 ```
+### List
+#### To list installed mods, use this command:
+``` sh
+minefetch list
+```
 ### Version
 #### To print current MineFetch version, type:
 ``` sh
