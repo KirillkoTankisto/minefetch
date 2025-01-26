@@ -14,6 +14,7 @@ use rfd::AsyncFileDialog;
 use serde_json::json;
 use serde_json::{self, Value};
 use sha1::{Digest, Sha1};
+use tokio::fs::DirEntry;
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt, BufWriter};
 
 // Internal modules
@@ -31,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match args.get(1).map(String::as_str) {
         Some("add") => match args.get(2).map(String::as_str) {
             Some(s) => {
-                async_println!(":: Starting add...").await;
+                async_println!(":: Adding mod...").await;
                 let profile: Profile = read_config().await?;
                 let params = vec![
                     (
@@ -44,7 +45,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     ),
                 ];
                 let client = reqwest::Client::new();
-                let modversion = fetch_latest_version(s, &client, &params).await?;
+                let modversion = match fetch_latest_version(s, &client, &params).await {
+                    Ok(modversion) => modversion,
+                    Err(e) => {
+                        async_eprintln!("{}", e).await;
+                        return Ok(())
+                    }
+                };
                 download_file(&profile.modsfolder, &modversion.0, &modversion.1, &client).await?;
                 async_println!(":: Downloaded {} ({})", &s, &modversion.0).await;
             }
@@ -53,13 +60,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         },
 
         Some("profile") => match args.get(2).map(String::as_str) {
-            Some("create") => config_create().await?,
+            Some("create") => create_profile().await?,
             Some("delete") => match args.get(3).map(String::as_str) {
-                Some("all") => profile_delete_all().await?,
-                _ => profile_delete().await?,
+                Some("all") => delete_all_profiles().await?,
+                _ => match delete_profile().await {
+                    Ok(()) => (),
+                    Err(e) => async_eprintln!("{}", e).await,
+                },
             },
-            Some("switch") => profile_switch().await?,
-            Some("list") => profile_list().await?,
+            Some("switch") => switch_profile().await?,
+            Some("list") => list_profiles().await?,
             _ => {
                 async_println!(":: Usage: minefetch profile <create|delete|delete all|switch|list>")
                     .await
@@ -70,7 +80,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         Some("search") => match args.get(2) {
             Some(query) => {
-                let profile: Profile = read_config().await?;
+                let profile: Profile = match read_config().await {
+                    Ok(profile) => profile,
+                    Err(e) => {
+                        async_eprintln!("{}", e).await;
+                        return Ok(());
+                    }
+                };
                 let facets = json!([
                     [format!("categories:{}", profile.loader)],
                     [format!("versions:{}", profile.gameversion)],
@@ -87,7 +103,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     ),
                 ];
                 let client = reqwest::Client::new();
-                let files = mod_search(query, facets, &client, &fetch_params).await?;
+                let files = match search_mods(query, facets, &client, &fetch_params).await {
+                    Ok(files) => files,
+                    Err(e) => {
+                        async_eprintln!(":: {}", e).await;
+                        return Ok(());
+                    }
+                };
                 download_multiple_files(files, &profile.modsfolder, &client).await?;
             }
             None => async_println!(":: Usage: minefetch search <query>").await,
@@ -95,16 +117,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         Some("upgrade") | Some("update") => {
             let profile: Profile = read_config().await?;
-            let files = upgrade(&profile).await?;
+            let files = match upgrade_mods(&profile).await {
+                Ok(files) => files,
+                Err(e) => {
+                    async_eprintln!("{}", e).await;
+                    return Ok(());
+                }
+            };
             let client = reqwest::Client::new();
             download_multiple_files(files, &profile.modsfolder, &client).await?;
-        },
-        
+        }
+
         Some("list") => {
             let profile: Profile = read_config().await?;
             let client = reqwest::Client::new();
-            list_mods(&profile, &client).await?;
-        },
+            match list_mods(&profile, &client).await {
+                Ok(()) => (),
+                Err(e) => async_eprintln!("{}", e).await,
+            };
+        }
 
         Some(_) => async_println!(":: There is no such command!").await,
 
@@ -135,7 +166,10 @@ async fn fetch_latest_version(
         .text()
         .await?;
 
-    let parsed: VersionsList = serde_json::from_str(&res)?;
+    let parsed: VersionsList = match serde_json::from_str(&res) {
+        Ok(parsed) => parsed,
+        Err(_) => return Err(":: Cannot find such mod".into())
+    };
 
     let version = parsed.get(0).ok_or("No versions available")?;
 
@@ -149,7 +183,7 @@ async fn fetch_latest_version(
 }
 
 /// Mod search
-async fn mod_search(
+async fn search_mods(
     query: &String,
     facets: Value,
     client: &reqwest::Client,
@@ -160,15 +194,24 @@ async fn mod_search(
     let params: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
     let url = reqwest::Url::parse_with_params("https://api.modrinth.com/v2/search", &params)?;
 
-    let res = client
+    let res = match client
         .get(url)
         .header("User-Agent", "KirillkoTankisto")
         .send()
-        .await?
-        .text()
-        .await?;
+        .await
+    {
+        Ok(res) => res,
+        Err(_) => return Err("No internet connection".into()),
+    }
+    .text()
+    .await?;
 
     let parsed: Search = serde_json::from_str(&res)?;
+
+    if parsed.hits.is_empty() {
+        return Err("No hits".into());
+    }
+
     for i in (0..parsed.hits.len()).rev() {
         async_println!("[{}] {}", i + 1, parsed.hits.get(i).unwrap().title).await
     }
@@ -231,10 +274,11 @@ async fn download_multiple_files(
         let sanitized_path = PathBuf::from(base_path);
 
         if !sanitized_path.starts_with(base_path) {
-            eprintln!(
+            async_eprintln!(
                 "Potential path traversal attack detected: {:?}",
                 sanitized_path
-            );
+            )
+            .await;
             continue;
         }
 
@@ -254,7 +298,7 @@ async fn download_multiple_files(
 
     for handle in handles {
         if let Err(e) = handle.await {
-            eprintln!("Task panicked: {:?}", e);
+            async_eprintln!("Task panicked: {:?}", e).await;
         }
     }
 
@@ -276,13 +320,16 @@ async fn generate_hash() -> Result<String, Box<dyn std::error::Error + Send + Sy
 
 /// Returns single active Profile
 async fn read_config() -> Result<Profile, Box<dyn std::error::Error + Send + Sync>> {
-    let home_dir = home::home_dir().ok_or("Couldn't find the home dir")?;
+    let home_dir = get_confdir().await?;
     let config_path = home_dir
         .join(".config")
         .join("minefetch")
         .join("config.toml");
 
-    let contents = tokio::fs::read_to_string(&config_path).await?;
+    let contents = match tokio::fs::read_to_string(&config_path).await {
+        Ok(contents) => contents,
+        Err(_) => return Err(":: There's no config yet, type minefetch profile create".into()),
+    };
     let config: Config = toml::from_str(&contents)?;
 
     config
@@ -294,7 +341,7 @@ async fn read_config() -> Result<Profile, Box<dyn std::error::Error + Send + Syn
 
 /// Returns full Config
 async fn read_full_config() -> Result<Config, Box<dyn std::error::Error + Send + Sync>> {
-    let home_dir = home::home_dir().ok_or(":wtf: Couldn't find the home dir")?;
+    let home_dir = get_confdir().await?;
     let config_path = home_dir
         .join(".config")
         .join("minefetch")
@@ -306,7 +353,7 @@ async fn read_full_config() -> Result<Config, Box<dyn std::error::Error + Send +
 }
 
 /// Creates config file
-async fn config_create() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn create_profile() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     async_print!(":: Press enter to choose mods directory").await;
 
     press_enter().await?;
@@ -360,7 +407,7 @@ async fn config_create() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
             .map(|(_, value)| value.to_string())
             .ok_or_else(|| "Cannot translate pretty text to system one")?,
         Err(_) => {
-            async_println!(":err: Why did you do that?").await;
+            async_eprintln!(":err: Why did you do that?").await;
             exit(0)
         }
     };
@@ -389,7 +436,7 @@ async fn config_create() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 
     let string_toml = toml::to_string(&current_config)?;
 
-    let home_dir = home::home_dir().ok_or("Couldn't find the home dir")?;
+    let home_dir = get_confdir().await?;
     let config_path = home_dir
         .join(".config")
         .join("minefetch")
@@ -401,7 +448,7 @@ async fn config_create() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 }
 
 /// Deletes one selected profile
-async fn profile_delete() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn delete_profile() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut config = match read_full_config().await {
         Ok(cfg) => cfg,
         Err(_) => {
@@ -415,6 +462,10 @@ async fn profile_delete() -> Result<(), Box<dyn std::error::Error + Send + Sync>
         .iter()
         .map(|i| (i.name.clone(), i.hash.clone()))
         .collect();
+
+    if profiles.is_empty() {
+        return Err(":: There are no profiles yet".into());
+    };
 
     let choices: Vec<_> = profiles.iter().map(|(label, _)| label).collect();
 
@@ -442,14 +493,12 @@ async fn profile_delete() -> Result<(), Box<dyn std::error::Error + Send + Sync>
         }
     };
 
-    async_println!("{}", selected_value).await;
-
     config
         .profile
         .retain(|profile| profile.hash != selected_value);
 
     let string_toml = toml::to_string(&config)?;
-    let home_dir = home::home_dir().ok_or("Couldn't find the home dir")?;
+    let home_dir = get_confdir().await?;
     let config_path = home_dir
         .join(".config")
         .join("minefetch")
@@ -461,7 +510,7 @@ async fn profile_delete() -> Result<(), Box<dyn std::error::Error + Send + Sync>
 }
 
 /// Deletes config file completely
-async fn profile_delete_all() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn delete_all_profiles() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match read_full_config().await {
         Ok(cfg) => cfg,
         Err(_) => {
@@ -469,7 +518,7 @@ async fn profile_delete_all() -> Result<(), Box<dyn std::error::Error + Send + S
             return Ok(());
         }
     };
-    let home_dir = home::home_dir().ok_or("Couldn't find the home dir")?;
+    let home_dir = get_confdir().await?;
     let config_path = home_dir
         .join(".config")
         .join("minefetch")
@@ -479,7 +528,7 @@ async fn profile_delete_all() -> Result<(), Box<dyn std::error::Error + Send + S
 }
 
 /// Switches profile to selected one
-async fn profile_switch() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn switch_profile() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut config = match read_full_config().await {
         Ok(cfg) => cfg,
         Err(_) => {
@@ -541,7 +590,7 @@ async fn profile_switch() -> Result<(), Box<dyn std::error::Error + Send + Sync>
     }
 
     let string_toml = toml::to_string(&config)?;
-    let home_dir = home::home_dir().ok_or("Couldn't find the home dir")?;
+    let home_dir = get_confdir().await?;
     let config_path = home_dir
         .join(".config")
         .join("minefetch")
@@ -553,7 +602,7 @@ async fn profile_switch() -> Result<(), Box<dyn std::error::Error + Send + Sync>
 }
 
 /// Lists all profiles
-async fn profile_list() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn list_profiles() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = match read_full_config().await {
         Ok(cfg) => cfg,
         Err(_) => {
@@ -586,7 +635,7 @@ async fn profile_list() -> Result<(), Box<dyn std::error::Error + Send + Sync>> 
 }
 
 /// Updates mods to the latest version
-async fn upgrade(
+async fn upgrade_mods(
     profile: &Profile,
 ) -> Result<Vec<(String, String)>, Box<dyn std::error::Error + Send + Sync>> {
     let hashes = get_hashes(&profile.modsfolder).await?;
@@ -600,15 +649,19 @@ async fn upgrade(
 
     let client = reqwest::Client::new();
     let url = "https://api.modrinth.com/v2/version_files/update";
-    let res = client
+    let res = match client
         .post(url)
         .header("User-Agent", "KirillkoTankisto")
         .header("Content-Type", "application/json")
         .body(hashes_send)
         .send()
-        .await?
-        .text()
-        .await?;
+        .await
+    {
+        Ok(res) => res,
+        Err(_) => return Err(":: No internet connection".into()),
+    }
+    .text()
+    .await?;
 
     let mut versions: MFHashMap = serde_json::from_str(&res)?;
     let mut keys_to_remove = Vec::new();
@@ -649,7 +702,10 @@ async fn upgrade(
 
 /// Returns Vec<String> of hashes in given path
 async fn get_hashes(path: &str) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
-    let mut entries = tokio::fs::read_dir(path).await?;
+    let mut entries = match tokio::fs::read_dir(path).await {
+        Ok(entries) => entries,
+        Err(_) => return Err(":: There are no mods yet".into()),
+    };
 
     let mut hashes: Vec<String> = Vec::new();
 
@@ -668,8 +724,8 @@ async fn get_hashes(path: &str) -> Result<Vec<String>, Box<dyn std::error::Error
     for task in tasks {
         match task.await {
             Ok(Ok(hash)) => hashes.push(hash),
-            Ok(Err(e)) => eprintln!("Error processing hash: {e}"),
-            Err(e) => eprintln!("Task error: {e}"),
+            Ok(Err(e)) => async_eprintln!("Error processing hash: {e}").await,
+            Err(e) => async_eprintln!("Task error: {e}").await,
         }
     }
     if hashes.is_empty() {
@@ -716,7 +772,10 @@ async fn remove_mods_by_hash(
 }
 
 /// Lists mods in selected profile
-async fn list_mods(profile: &Profile, client: &reqwest::Client) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn list_mods(
+    profile: &Profile,
+    client: &reqwest::Client,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let hashes = Hash {
         hashes: match get_hashes(&profile.modsfolder).await {
             Ok(hashes) => hashes,
@@ -727,27 +786,73 @@ async fn list_mods(profile: &Profile, client: &reqwest::Client) -> Result<(), Bo
         },
         algorithm: "sha1".to_string(),
         loaders: None,
-        game_versions: None
+        game_versions: None,
     };
     let hashes_send = serde_json::to_string(&hashes)?;
-    
+
     let url = "https://api.modrinth.com/v2/version_files";
-    let res = client
+    let res = match client
         .post(url)
         .header("User-Agent", "KirillkoTankisto")
         .header("Content-Type", "application/json")
         .body(hashes_send)
         .send()
-        .await?
-        .text()
-        .await?;
+        .await
+    {
+        Ok(res) => res,
+        Err(_) => {
+            async_eprintln!(":: No internet connection, walking through local files...").await;
+            let path = Path::new(&profile.modsfolder);
+            let mut entries = tokio::fs::read_dir(path).await?;
+            while let Some(entry) = entries.next_entry().await? {
+                if let Some(path) = get_jar_filename(&entry).await {
+                    async_println!("{}", path).await;
+                }
+            }
+            return Err(":: Done".into());
+        }
+    }
+    .text()
+    .await?;
 
     let versions: MFHashMap = serde_json::from_str(&res)?;
-    async_println!(":: There are {} mods in profile {}:", versions.len(), profile.name).await;
+    if versions.len() == 0 {
+        return Err(":: There are no mods yet".into());
+    }
+    async_println!(
+        ":: There are {} mods in profile {}:",
+        versions.len(),
+        profile.name
+    )
+    .await;
     let mut a: u32 = 1;
     for (_, i) in versions {
         async_println!("[{}] {}", a, i.name).await;
         a += 1
     }
     Ok(())
+}
+
+/// Finds all .jar files in directory
+async fn get_jar_filename(entry: &DirEntry) -> Option<String> {
+    let path = entry.path();
+    if path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("jar") {
+        return path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(String::from);
+    }
+    None
+}
+
+/// Returns home dir. Hopefully fixes problems on Windows
+async fn get_confdir() -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
+    let system = whoami::platform().to_string();
+    let confdir = if system == "Windows" {
+        PathBuf::from(format!("C:\\Users\\{}", whoami::username()))
+    } else {
+        home::home_dir().ok_or("Couldn't find the home dir")?
+    };
+
+    Ok(confdir)
 }

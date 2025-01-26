@@ -15,6 +15,7 @@ tokio = { version = "1.42.0", features = ["full"] }
 rfd = "0.15.2"
 inquire = "0.7.5"
 sha1 = "0.10.6"
+whoami = "1.5.2"
 
 [profile.release]
 strip = true
