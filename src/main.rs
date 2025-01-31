@@ -49,7 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     Ok(modversion) => modversion,
                     Err(e) => {
                         async_eprintln!("{}", e).await;
-                        return Ok(())
+                        return Ok(());
                     }
                 };
                 download_file(&profile.modsfolder, &modversion.0, &modversion.1, &client).await?;
@@ -106,7 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let files = match search_mods(query, facets, &client, &fetch_params).await {
                     Ok(files) => files,
                     Err(e) => {
-                        async_eprintln!(":: {}", e).await;
+                        async_eprintln!("{}", e).await;
                         return Ok(());
                     }
                 };
@@ -168,7 +168,7 @@ async fn fetch_latest_version(
 
     let parsed: VersionsList = match serde_json::from_str(&res) {
         Ok(parsed) => parsed,
-        Err(_) => return Err(":: Cannot find such mod".into())
+        Err(_) => return Err(":: Cannot find such mod".into()),
     };
 
     let version = parsed.get(0).ok_or("No versions available")?;
@@ -209,18 +209,25 @@ async fn search_mods(
     let parsed: Search = serde_json::from_str(&res)?;
 
     if parsed.hits.is_empty() {
-        return Err("No hits".into());
+        return Err(":: No hits".into());
     }
 
     for i in (0..parsed.hits.len()).rev() {
-        async_println!("[{}] {}", i + 1, parsed.hits.get(i).unwrap().title).await
+        if let Some(hit) = parsed.hits.get(i) {
+            async_println!("[{}] {}", i + 1, hit.title).await;
+        }
     }
 
     let selected_string = ainput(":: Select mods to install: ").await?;
     let selected_string = selected_string.split(' ');
     let mut numbers: Vec<usize> = Vec::new();
     for i in selected_string {
-        numbers.push(i.parse::<usize>().unwrap() - 1);
+        numbers.push(
+            match i.parse::<usize>() {
+                Ok(n) => n,
+                Err(_) => return Err(":: Failed to parse arguments".into()),
+            } - 1,
+        );
     }
     let fetch_params: Vec<(String, String)> = fetch_params
         .iter()
@@ -284,13 +291,17 @@ async fn download_multiple_files(
 
         let handle = tokio::spawn(async move {
             async_println!(":: Downloading {}", &filename).await;
-            download_file(
-                sanitized_path.to_str().unwrap_or_default(),
-                &filename,
-                &url,
-                &client,
-            )
-            .await
+            let path_str = match sanitized_path.to_str() {
+                Some(s) => s,
+                None => {
+                    async_eprintln!(":err: Invalid UTF-8 path for {}", filename).await;
+                    return; // Exit the task early
+                }
+            };
+            match download_file(path_str, &filename, &url, &client).await {
+                Ok(_) => {}
+                Err(e) => async_eprintln!(":err: Failed to download {}: {}", filename, e).await,
+            }
         });
 
         handles.push(handle);
@@ -481,12 +492,15 @@ async fn delete_profile() -> Result<(), Box<dyn std::error::Error + Send + Sync>
         .with_render_config(render_cfg)
         .prompt()
     {
-        Ok(selection) => profiles
+        Ok(selection) => match profiles
             .iter()
             .find(|(label, _)| &*label == selection) // Notice the dereference here
             .map(|(_, value)| value.clone())
             .ok_or_else(|| ":err: Cannot translate pretty text to system one")
-            .unwrap(),
+        {
+            Ok(s) => s,
+            Err(e) => return Err(e.into()),
+        },
         Err(_) => {
             async_println!(":err: Why did you do that?").await;
             exit(0)
@@ -570,12 +584,15 @@ async fn switch_profile() -> Result<(), Box<dyn std::error::Error + Send + Sync>
         .with_render_config(render_cfg)
         .prompt()
     {
-        Ok(selection) => profiles
+        Ok(selection) => match profiles
             .iter()
             .find(|(label, _)| &*label == selection) // Notice the dereference here
             .map(|(_, value)| value.clone())
             .ok_or_else(|| ":err: Cannot translate pretty text to system one")
-            .unwrap(),
+        {
+            Ok(s) => s,
+            Err(e) => return Err(e.into()),
+        },
         Err(_) => {
             async_println!(":err: Why did you do that?").await;
             exit(0)
