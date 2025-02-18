@@ -1,18 +1,24 @@
-use tokio::io::{self, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufWriter, BufReader};
-
+// External crates
+use tokio::io::{self, AsyncBufReadExt, AsyncReadExt, BufReader};
 /// Macro for async std output (with \n)
 #[macro_export]
 macro_rules! async_println {
     ($($arg:tt)*) => {{
         async {
-            let mut stdout = BufWriter::new(io::stdout());
-            if let Err(e) = stdout.write_all(format!($($arg)*).as_bytes()).await {
+            let mut stdout = tokio::io::BufWriter::new(tokio::io::stdout());
+            if let Err(e) = tokio::io::AsyncWriteExt::write_all(
+                &mut stdout,
+                format!($($arg)*).as_bytes()
+            ).await {
                 eprintln!("Error writing to stdout: {}", e);
             }
-            if let Err(e) = stdout.write_all(b"\n").await {
+            if let Err(e) = tokio::io::AsyncWriteExt::write_all(
+                &mut stdout,
+                b"\n"
+            ).await {
                 eprintln!("Error writing newline to stdout: {}", e);
             }
-            if let Err(e) = stdout.flush().await {
+            if let Err(e) = tokio::io::AsyncWriteExt::flush(&mut stdout).await {
                 eprintln!("Error flushing stdout: {}", e);
             }
         }
@@ -24,14 +30,14 @@ macro_rules! async_println {
 macro_rules! async_eprintln {
     ($($arg:tt)*) => {{
         async {
-            let mut stderr = BufWriter::new(io::stderr());
-            if let Err(e) = stderr.write_all(format!($($arg)*).as_bytes()).await {
+            let mut stderr = tokio::io::BufWriter::new(tokio::io::stderr());
+            if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut stderr, format!($($arg)*).as_bytes()).await {
                 eprintln!("Error writing to stderr: {}", e);
             }
-            if let Err(e) = stderr.write_all(b"\n").await {
+            if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut stderr, b"\n").await {
                 eprintln!("Error writing newline to stderr: {}", e);
             }
-            if let Err(e) = stderr.flush().await {
+            if let Err(e) = tokio::io::AsyncWriteExt::flush(&mut stderr).await {
                 eprintln!("Error flushing stderr: {}", e);
             }
         }
@@ -43,18 +49,19 @@ macro_rules! async_eprintln {
 macro_rules! async_print {
     ($($arg:tt)*) => {{
         async {
-            let mut stdout = BufWriter::new(io::stdout());
-            if let Err(e) = stdout.write_all(format!($($arg)*).as_bytes()).await {
+            let mut stdout = tokio::io::BufWriter::new(tokio::io::stdout());
+            if let Err(e) = tokio::io::AsyncWriteExt::write_all(
+                &mut stdout,
+                format!($($arg)*).as_bytes()
+            ).await {
                 eprintln!("Error writing to stdout: {}", e);
             }
-            if let Err(e) = stdout.flush().await {
+            if let Err(e) = tokio::io::AsyncWriteExt::flush(&mut stdout).await {
                 eprintln!("Error flushing stdout: {}", e);
             }
         }
     }}
 }
-
-
 
 /// Press enter to continue functionality
 pub async fn press_enter() -> Result<(), tokio::io::Error> {
