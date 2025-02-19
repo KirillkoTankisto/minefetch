@@ -1,5 +1,15 @@
+/*
+ __  __ _            _____    _       _       ___ ___  
+|  \/  (_)_ __   ___|  ___|__| |_ ___| |__   |_ _/ _ \ 
+| |\/| | | '_ \ / _ \ |_ / _ \ __/ __| '_ \   | | | | |
+| |  | | | | | |  __/  _|  __/ || (__| | | |  | | |_| |
+|_|  |_|_|_| |_|\___|_|  \___|\__\___|_| |_| |___\___/ 
+
+*/
+
 // External crates
 use tokio::io::{self, AsyncBufReadExt, AsyncReadExt, BufReader};
+
 /// Macro for async std output (with \n)
 #[macro_export]
 macro_rules! async_println {

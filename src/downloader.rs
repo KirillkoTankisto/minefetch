@@ -1,3 +1,12 @@
+/* 
+ ____                      _                 _           
+|  _ \  _____      ___ __ | | ___   __ _  __| | ___ _ __ 
+| | | |/ _ \ \ /\ / / '_ \| |/ _ \ / _` |/ _` |/ _ \ '__|
+| |_| | (_) \ V  V /| | | | | (_) | (_| | (_| |  __/ |   
+|____/ \___/ \_/\_/ |_| |_|_|\___/ \__,_|\__,_|\___|_| 
+
+*/
+
 // Standard imports
 use crate::{async_eprintln, async_println, get_dependencies, Dependency};
 use std::path::{Path, PathBuf};
@@ -70,7 +79,7 @@ pub async fn download_multiple_files(
             Some(dep) => {
                 let list = get_dependencies(&dep).await?;
                 for i in list {
-                    async_println!(":: {} {}", i.0, i.1).await;
+                    async_println!(":deps: {} {}", i.0, i.1).await;
                 }
             }
             None => {}

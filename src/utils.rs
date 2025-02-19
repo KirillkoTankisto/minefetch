@@ -1,3 +1,12 @@
+/*
+ _   _ _   _ _ _ _   _           
+| | | | |_(_) (_) |_(_) ___  ___ 
+| | | | __| | | | __| |/ _ \/ __|
+| |_| | |_| | | | |_| |  __/\__ \
+ \___/ \__|_|_|_|\__|_|\___||___/
+
+*/
+
 // Standard imports
 use std::result::Result;
 
@@ -7,6 +16,7 @@ use crate::Path;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use sha1::{Digest, Sha1};
+use tokio::fs::DirEntry;
 use tokio::io::{self, AsyncReadExt};
 
 /// Generates random 64 char string
@@ -93,4 +103,16 @@ pub async fn remove_mods_by_hash(
     }
 
     Ok(())
+}
+
+/// Finds all .jar files in directory
+pub async fn get_jar_filename(entry: &DirEntry) -> Option<String> {
+    let path = entry.path();
+    if path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("jar") {
+        return path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(String::from);
+    }
+    None
 }

@@ -1,8 +1,18 @@
+/*
+ __  __ _            _____    _       _       ____             __ _ _      
+|  \/  (_)_ __   ___|  ___|__| |_ ___| |__   |  _ \ _ __ ___  / _(_) | ___ 
+| |\/| | | '_ \ / _ \ |_ / _ \ __/ __| '_ \  | |_) | '__/ _ \| |_| | |/ _ \
+| |  | | | | | |  __/  _|  __/ || (__| | | | |  __/| | | (_) |  _| | |  __/
+|_|  |_|_|_| |_|\___|_|  \___|\__\___|_| |_| |_|   |_|  \___/|_| |_|_|\___|
+
+*/
+
 // Standard imports
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::result::Result;
 use std::vec;
+
 // External crates
 use inquire::{
     ui::{Color, RenderConfig, Styled},
@@ -11,8 +21,8 @@ use inquire::{
 use rfd::AsyncFileDialog;
 
 // Internal imports
-use crate::mfio::*;
-use crate::structs::*;
+use crate::mfio::{ainput, press_enter};
+use crate::structs::{Config, Profile};
 use crate::utils::generate_hash;
 use crate::{async_eprintln, async_print, async_println};
 
@@ -33,7 +43,7 @@ pub async fn read_config() -> Result<Profile, Box<dyn std::error::Error + Send +
     config
         .profile
         .into_iter()
-        .find(|p| p.active)
+        .find(|p| p.active) // Searching for only active one
         .ok_or_else(|| ":: No active profile found".into())
 }
 

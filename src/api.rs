@@ -1,8 +1,18 @@
+/*
+ __  __ _            _____    _       _          _    ____ ___ 
+|  \/  (_)_ __   ___|  ___|__| |_ ___| |__      / \  |  _ \_ _|
+| |\/| | | '_ \ / _ \ |_ / _ \ __/ __| '_ \    / _ \ | |_) | | 
+| |  | | | | | |  __/  _|  __/ || (__| | | |  / ___ \|  __/| | 
+|_|  |_|_|_| |_|\___|_|  \___|\__\___|_| |_| /_/   \_\_|  |___| 
+
+*/
+
+// Imports
 use crate::mfio::ainput;
 use crate::structs::{Dependency, Hash, MFHashMap, Object2, Profile, Search, VersionsList};
-use crate::utils::*;
+use crate::utils::{get_hashes, get_jar_filename, remove_mods_by_hash};
 use crate::Path;
-use crate::{async_eprintln, async_println, get_jar_filename};
+use crate::{async_eprintln, async_println};
 use serde_json::{self, Value};
 
 /// Returns filename, url, and optional dependencies.
@@ -31,17 +41,17 @@ pub async fn fetch_latest_version(
         .await?;
 
     // Parse the response.
-    let parsed: VersionsList = serde_json::from_str(&res).map_err(|_| "Cannot find such mod")?;
+    let parsed: VersionsList = serde_json::from_str(&res).map_err(|_| ":err: Cannot find such mod")?;
 
     // Get the first version.
-    let version = parsed.get(0).ok_or("No versions available")?;
+    let version = parsed.get(0).ok_or(":err: No versions available")?;
 
     // Get the primary file.
     let file = version
         .files
         .iter()
         .find(|file| file.primary)
-        .ok_or("No primary file found")?;
+        .ok_or(":err: No primary file found")?;
 
     Ok((
         file.filename.clone(),
@@ -70,7 +80,7 @@ pub async fn search_mods(
         .await
     {
         Ok(res) => res,
-        Err(_) => return Err("No internet connection".into()),
+        Err(_) => return Err(":err: No internet connection".into()),
     }
     .text()
     .await?;
@@ -94,7 +104,7 @@ pub async fn search_mods(
         numbers.push(
             match i.parse::<usize>() {
                 Ok(n) => n,
-                Err(_) => return Err(":: Failed to parse arguments".into()),
+                Err(_) => return Err(":err: Failed to parse arguments".into()),
             } - 1,
         );
     }
@@ -138,7 +148,7 @@ pub async fn upgrade_mods(
         .await
     {
         Ok(res) => res,
-        Err(_) => return Err(":: No internet connection".into()),
+        Err(_) => return Err(":err: No internet connection".into()),
     }
     .text()
     .await?;
@@ -150,7 +160,7 @@ pub async fn upgrade_mods(
             .files
             .iter()
             .find(|v| v.primary)
-            .ok_or("No primary file found")?;
+            .ok_or(":err: No primary file found")?;
         if hashes.hashes.contains(&file.hashes.sha1) {
             keys_to_remove.push(file.hashes.sha1.clone());
         }
@@ -169,7 +179,7 @@ pub async fn upgrade_mods(
             .files
             .iter()
             .find(|v| v.primary)
-            .ok_or("No primary file found")?;
+            .ok_or(":err: No primary file found")?;
         let file: (String, String, _) = (files.filename.clone(), files.url.clone(), None);
         version.push(file);
         hashes_to_remove.push(s.clone())

@@ -1,3 +1,12 @@
+/*
+ __  __       _         _____                 _   _
+|  \/  | __ _(_)_ __   |  ___|   _ _ __   ___| |_(_) ___  _ __
+| |\/| |/ _` | | '_ \  | |_ | | | | '_ \ / __| __| |/ _ \| '_ \
+| |  | | (_| | | | | | |  _|| |_| | | | | (__| |_| | (_) | | | |
+|_|  |_|\__,_|_|_| |_| |_|   \__,_|_| |_|\___|\__|_|\___/|_| |_|
+
+*/
+
 // Standard imports
 use std::path::Path;
 use std::result::Result;
@@ -5,7 +14,6 @@ use std::vec;
 
 // External crates
 use serde_json::json;
-use tokio::fs::DirEntry;
 
 // Internal modules
 mod api;
@@ -17,8 +25,10 @@ mod structs;
 mod utils;
 use api::*;
 use consts::*;
-use downloader::*;
-use profile::*;
+use downloader::{download_file, download_multiple_files};
+use profile::{
+    create_profile, delete_all_profiles, delete_profile, list_profiles, read_config, switch_profile,
+};
 use structs::*;
 
 /// The start of the main async function
@@ -55,7 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     Some(dep) => {
                         let list = get_dependencies(&dep).await?;
                         for i in list {
-                            async_println!(":: {} {}", i.0, i.1).await;
+                            async_println!(":deps: {} {}", i.0, i.1).await;
                         }
                     }
                     None => {}
@@ -158,16 +168,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         None => async_println!(":: No arguments provided").await,
     }
     Ok(())
-}
-
-/// Finds all .jar files in directory
-async fn get_jar_filename(entry: &DirEntry) -> Option<String> {
-    let path = entry.path();
-    if path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("jar") {
-        return path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .map(String::from);
-    }
-    None
 }
