@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::result::Result;
 // External crates
 
+use reqwest::Client;
 use tokio::io::AsyncWriteExt;
 
 /// Downloads single file
@@ -53,7 +54,7 @@ pub async fn download_multiple_files(
 
         if !sanitized_path.starts_with(base_path) {
             async_eprintln!(
-                "Potential path traversal attack detected: {:?}",
+                ":err: Potential path traversal attack detected: {:?}",
                 sanitized_path
             )
             .await;
@@ -65,7 +66,7 @@ pub async fn download_multiple_files(
             let path_str = match sanitized_path.to_str() {
                 Some(s) => s,
                 None => {
-                    async_eprintln!(":err: Invalid UTF-8 path for {}", filename).await;
+                    async_eprintln!("Invalid UTF-8 path for {}", filename).await;
                     return; // Exit the task early
                 }
             };
@@ -75,9 +76,11 @@ pub async fn download_multiple_files(
             }
         });
 
+        let client = Client::new();
+
         match deps {
             Some(dep) => {
-                let list = get_dependencies(&dep).await?;
+                let list = get_dependencies(&dep, &client).await?;
                 for i in list {
                     async_println!(":deps: {} {}", i.0, i.1).await;
                 }

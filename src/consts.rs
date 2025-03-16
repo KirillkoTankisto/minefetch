@@ -8,4 +8,4 @@
 */
 
 pub const NAME: &str = "MineFetch";
-pub const PROGRAM_VERSION: &str = "1.3.0";
+pub const PROGRAM_VERSION: &str = "1.3.1";

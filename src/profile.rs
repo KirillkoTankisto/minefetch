@@ -1,6 +1,6 @@
 /*
- __  __ _            _____    _       _       ____             __ _ _      
-|  \/  (_)_ __   ___|  ___|__| |_ ___| |__   |  _ \ _ __ ___  / _(_) | ___ 
+ __  __ _            _____    _       _       ____             __ _ _
+|  \/  (_)_ __   ___|  ___|__| |_ ___| |__   |  _ \ _ __ ___  / _(_) | ___
 | |\/| | | '_ \ / _ \ |_ / _ \ __/ __| '_ \  | |_) | '__/ _ \| |_| | |/ _ \
 | |  | | | | | |  __/  _|  __/ || (__| | | | |  __/| | | (_) |  _| | |  __/
 |_|  |_|_|_| |_|\___|_|  \___|\__\___|_| |_| |_|   |_|  \___/|_| |_|_|\___|
@@ -24,7 +24,7 @@ use rfd::AsyncFileDialog;
 use crate::mfio::{ainput, press_enter};
 use crate::structs::{Config, Profile};
 use crate::utils::generate_hash;
-use crate::{async_eprintln, async_print, async_println};
+use crate::{async_print, async_println};
 
 /// Returns single active Profile
 pub async fn read_config() -> Result<Profile, Box<dyn std::error::Error + Send + Sync>> {
@@ -36,7 +36,7 @@ pub async fn read_config() -> Result<Profile, Box<dyn std::error::Error + Send +
 
     let contents = match tokio::fs::read_to_string(&config_path).await {
         Ok(contents) => contents,
-        Err(_) => return Err(":: There's no config yet, type minefetch profile create".into()),
+        Err(_) => return Err("There's no config yet, type minefetch profile create".into()),
     };
     let config: Config = toml::from_str(&contents)?;
 
@@ -79,8 +79,7 @@ pub async fn create_profile() -> Result<(), Box<dyn std::error::Error + Send + S
             .await?;
             let path = Path::new(&buffer);
             if !path.exists() {
-                async_print!(":err: No folder with such name").await;
-                return Ok(());
+                return Err("No folder with such name".into());
             }
             buffer.trim().to_string()
         }
@@ -114,10 +113,7 @@ pub async fn create_profile() -> Result<(), Box<dyn std::error::Error + Send + S
             .find(|(label, _)| label == selection)
             .map(|(_, value)| value.to_string())
             .ok_or_else(|| "Cannot translate pretty text to system one")?,
-        Err(_) => {
-            async_eprintln!(":err: Why did you do that?").await;
-            exit(0)
-        }
+        Err(_) => return Err("Why did you do that?".into()),
     };
 
     let name = ainput(":: What should this profile be called? ").await?;
@@ -160,8 +156,7 @@ pub async fn delete_profile() -> Result<(), Box<dyn std::error::Error + Send + S
     let mut config = match read_full_config().await {
         Ok(cfg) => cfg,
         Err(_) => {
-            async_println!(":: There's no config yet, type minefetch profile create").await;
-            return Ok(());
+            return Err("There's no config yet, type minefetch profile create".into());
         }
     };
 
@@ -172,7 +167,7 @@ pub async fn delete_profile() -> Result<(), Box<dyn std::error::Error + Send + S
         .collect();
 
     if profiles.is_empty() {
-        return Err(":: There are no profiles yet".into());
+        return Err("There are no profiles yet".into());
     };
 
     let choices: Vec<_> = profiles.iter().map(|(label, _)| label).collect();
@@ -225,8 +220,7 @@ pub async fn delete_all_profiles() -> Result<(), Box<dyn std::error::Error + Sen
     match read_full_config().await {
         Ok(cfg) => cfg,
         Err(_) => {
-            async_println!(":: There's no config yet, type minefetch profile create").await;
-            return Ok(());
+            return Err("There's no config yet, type minefetch profile create".into());
         }
     };
     let home_dir = get_confdir().await?;
@@ -243,8 +237,7 @@ pub async fn switch_profile() -> Result<(), Box<dyn std::error::Error + Send + S
     let mut config = match read_full_config().await {
         Ok(cfg) => cfg,
         Err(_) => {
-            async_println!(":: There's no config yet, type minefetch profile create").await;
-            return Ok(());
+            return Err("There's no config yet, type minefetch profile create".into());
         }
     };
 
@@ -320,8 +313,7 @@ pub async fn list_profiles() -> Result<(), Box<dyn std::error::Error + Send + Sy
     let config = match read_full_config().await {
         Ok(cfg) => cfg,
         Err(_) => {
-            async_println!(":: There's no config yet, type minefetch profile create").await;
-            return Ok(());
+            return Err("There's no config yet, type minefetch profile create".into());
         }
     };
     for i in config.profile {

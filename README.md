@@ -2,7 +2,7 @@
 [![Rustlang](https://img.shields.io/static/v1?label=Made%20with&message=Rust&logo=rust&labelColor=e82833&color=b11522)](https://www.rust-lang.org)
 [![Github License](https://img.shields.io/github/license/KirillkoTankisto/minefetch?logo=mdBook)](https://github.com/KirillkoTankisto/minefetch/blob/main/LICENSE)
 ![Github commit activity](https://img.shields.io/github/commit-activity/t/KirillkoTankisto/minefetch)
-![Status](https://img.shields.io/badge/development_status-alpha-purple?logo=GitHub)
+![Status](https://img.shields.io/badge/development_status-beta-orange?logo=GitHub)
 
 > This project is inspired by [Ferium](https://github.com/gorilla-devs/ferium) but doesn't use its code. All code is written from scratch and may not work correctly
 ## Description
