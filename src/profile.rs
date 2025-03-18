@@ -278,7 +278,7 @@ pub async fn switch_profile() -> Result<(), Box<dyn std::error::Error + Send + S
             .iter()
             .find(|(label, _)| &*label == selection) // Notice the dereference here
             .map(|(_, value)| value.clone())
-            .ok_or_else(|| ":err: Cannot translate pretty text to system one")
+            .ok_or_else(|| "Cannot translate pretty text to system one")
         {
             Ok(s) => s,
             Err(e) => return Err(e.into()),

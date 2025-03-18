@@ -41,8 +41,7 @@ pub async fn fetch_latest_version(
         .await?;
 
     // Parse the response.
-    let parsed: VersionsList =
-        serde_json::from_str(&res).map_err(|_| "Cannot find such mod")?;
+    let parsed: VersionsList = serde_json::from_str(&res).map_err(|_| "Cannot find such mod")?;
 
     // Get the first version.
     let version = parsed.get(0).ok_or("No versions available")?;
@@ -105,7 +104,7 @@ pub async fn search_mods(
         numbers.push(
             match i.parse::<usize>() {
                 Ok(n) => n,
-                Err(_) => return Err("()Failed to parse arguments".into()),
+                Err(_) => return Err("Failed to parse arguments".into()),
             } - 1,
         );
     }

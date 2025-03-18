@@ -1,9 +1,9 @@
 /*
- __  __ _            _____    _       _       ___ ___  
-|  \/  (_)_ __   ___|  ___|__| |_ ___| |__   |_ _/ _ \ 
+ __  __ _            _____    _       _       ___ ___
+|  \/  (_)_ __   ___|  ___|__| |_ ___| |__   |_ _/ _ \
 | |\/| | | '_ \ / _ \ |_ / _ \ __/ __| '_ \   | | | | |
 | |  | | | | | |  __/  _|  __/ || (__| | | |  | | |_| |
-|_|  |_|_|_| |_|\___|_|  \___|\__\___|_| |_| |___\___/ 
+|_|  |_|_|_| |_|\___|_|  \___|\__\___|_| |_| |___\___/
 
 */
 
@@ -42,13 +42,13 @@ macro_rules! async_eprintln {
         async {
             let mut stderr = tokio::io::BufWriter::new(tokio::io::stderr());
             if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut stderr, format!($($arg)*).as_bytes()).await {
-                eprintln!("Error writing to stderr: {}", e);
+                eprintln!(":err: Error writing to stderr: {}", e);
             }
             if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut stderr, b"\n").await {
-                eprintln!("Error writing newline to stderr: {}", e);
+                eprintln!(":err: Error writing newline to stderr: {}", e);
             }
             if let Err(e) = tokio::io::AsyncWriteExt::flush(&mut stderr).await {
-                eprintln!("Error flushing stderr: {}", e);
+                eprintln!(":err: Error flushing stderr: {}", e);
             }
         }
     }}
@@ -64,10 +64,10 @@ macro_rules! async_print {
                 &mut stdout,
                 format!($($arg)*).as_bytes()
             ).await {
-                eprintln!("Error writing to stdout: {}", e);
+                eprintln!(":err: Error writing to stdout: {}", e);
             }
             if let Err(e) = tokio::io::AsyncWriteExt::flush(&mut stdout).await {
-                eprintln!("Error flushing stdout: {}", e);
+                eprintln!(":err: Error flushing stdout: {}", e);
             }
         }
     }}

@@ -1,9 +1,9 @@
-/* 
- ____                      _                 _           
-|  _ \  _____      ___ __ | | ___   __ _  __| | ___ _ __ 
+/*
+ ____                      _                 _
+|  _ \  _____      ___ __ | | ___   __ _  __| | ___ _ __
 | | | |/ _ \ \ /\ / / '_ \| |/ _ \ / _` |/ _` |/ _ \ '__|
-| |_| | (_) \ V  V /| | | | | (_) | (_| | (_| |  __/ |   
-|____/ \___/ \_/\_/ |_| |_|_|\___/ \__,_|\__,_|\___|_| 
+| |_| | (_) \ V  V /| | | | | (_) | (_| | (_| |  __/ |
+|____/ \___/ \_/\_/ |_| |_|_|\___/ \__,_|\__,_|\___|_|
 
 */
 
@@ -66,7 +66,7 @@ pub async fn download_multiple_files(
             let path_str = match sanitized_path.to_str() {
                 Some(s) => s,
                 None => {
-                    async_eprintln!("Invalid UTF-8 path for {}", filename).await;
+                    async_eprintln!(":err: Invalid UTF-8 path for {}", filename).await;
                     return; // Exit the task early
                 }
             };
@@ -93,7 +93,7 @@ pub async fn download_multiple_files(
 
     for handle in handles {
         if let Err(e) = handle.await {
-            async_eprintln!("Task panicked: {:?}", e).await;
+            async_eprintln!(":err: Task panicked: {:?}", e).await;
         }
     }
 

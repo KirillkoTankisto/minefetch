@@ -115,7 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             _ => {
                 async_eprintln!(
-                    ":: Usage: minefetch profile <create|delete|delete all|switch|list>"
+                    ":: Usage: minefetch profile < create | delete | delete all | switch | list >"
                 )
                 .await
             }
@@ -170,6 +170,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         Some("upgrade") | Some("update") => {
             let profile: Profile = read_config().await?;
+
             let files = match upgrade_mods(&profile).await {
                 Ok(files) => files,
                 Err(e) => {
@@ -177,13 +178,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     return Ok(());
                 }
             };
+
             let client = reqwest::Client::new();
+
             download_multiple_files(files, &profile.modsfolder, &client).await?;
         }
 
         Some("list") => {
             let profile: Profile = read_config().await?;
             let client = reqwest::Client::new();
+
             match list_mods(&profile, &client).await {
                 Ok((size, versions)) => {
                     if size == 0 {
