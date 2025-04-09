@@ -84,7 +84,7 @@ pub async fn press_enter() -> Result<(), tokio::io::Error> {
     Ok(())
 }
 
-/// Reads user input and returns String
+/// Reads user input and returns a String
 pub async fn ainput(prompt: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let mut buffer = String::new();
     let mut reader = BufReader::new(tokio::io::stdin());

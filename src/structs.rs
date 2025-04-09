@@ -86,3 +86,8 @@ pub struct Dependency {
     pub project_id: String,
     pub dependency_type: String,
 }
+
+#[derive(Deserialize, Serialize)]
+pub struct Locks {
+    pub lock: Vec<String>,
+}

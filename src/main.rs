@@ -12,6 +12,7 @@ use std::path::Path;
 use std::result::Result;
 use std::vec;
 
+use reqwest::Client;
 // External crates
 use serde_json::json;
 
@@ -27,56 +28,56 @@ use api::*;
 use consts::*;
 use downloader::*;
 use profile::{
-    create_profile, delete_all_profiles, delete_profile, list_profiles, read_config, switch_profile,
+    add_lock, create_profile, delete_all_profiles, delete_profile, list_locks, list_profiles,
+    read_config, remove_lock, switch_profile,
 };
 use structs::*;
 use utils::get_jar_filename;
 
-/// The start of the main async function
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    match initialise().await {
+        Ok(_) => (),
+        Err(e) => async_eprintln!(":err: {e}").await,
+    };
+    Ok(())
+}
+
+/// The start of the main async function
+async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
         Some("add") => match args.get(2).map(String::as_str) {
-            Some(s) => {
+            Some(modname) => {
                 async_println!(":: Adding mod...").await;
 
-                let profile: Profile = match read_config().await {
-                    Ok(profile) => profile,
-                    Err(e) => return Err(e),
-                };
+                let profile: Profile = read_config().await?;
 
                 let params = vec![
                     (
                         "loaders".to_string(),
-                        serde_json::to_string(&[profile.loader])?,
+                        serde_json::to_string(&[&profile.loader])?,
                     ),
                     (
                         "game_versions".to_string(),
-                        serde_json::to_string(&[profile.gameversion])?,
+                        serde_json::to_string(&[&profile.gameversion])?,
                     ),
                 ];
 
                 let client = reqwest::Client::new();
 
-                let modversion = match fetch_latest_version(&s.to_string(), &client, &params).await
-                {
-                    Ok(modversion) => modversion,
-                    Err(e) => {
-                        async_eprintln!(":err: {e}").await;
-                        return Ok(());
-                    }
-                };
+                let modversion =
+                    fetch_latest_version(&modname.to_string(), &client, &params, &profile).await?;
 
                 download_file(&profile.modsfolder, &modversion.0, &modversion.1, &client).await?;
 
-                async_println!(":: Downloaded {} ({})", &s, &modversion.0).await;
+                async_println!(":: Downloaded {} ({})", &modname, &modversion.0).await;
 
                 match modversion.2 {
                     Some(dep) => {
-                        let list = get_dependencies(&dep, &client).await?;
-                        for i in list {
-                            async_println!(":deps: {} {}", i.0, i.1).await;
+                        let dependencies = get_dependencies(&dep, &client).await?;
+                        for dependency in dependencies {
+                            async_println!(":deps: {} {}", dependency.0, dependency.1).await;
                         }
                     }
                     None => {}
@@ -87,31 +88,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         },
 
         Some("profile") => match args.get(2).map(String::as_str) {
-            Some("create") => match create_profile().await {
-                Ok(()) => (),
-                Err(e) => async_eprintln!(":err: {e}").await,
-            },
+            Some("create") => create_profile().await?,
 
             Some("delete") => match args.get(3).map(String::as_str) {
-                Some("all") => match delete_all_profiles().await {
-                    Ok(()) => (),
-                    Err(e) => async_eprintln!(":err: {e}").await,
-                },
-                _ => match delete_profile().await {
-                    Ok(()) => (),
-                    Err(e) => async_eprintln!(":err: {e}").await,
-                },
+                Some("all") => delete_all_profiles().await?,
+                _ => delete_profile().await?,
             },
 
-            Some("switch") => match switch_profile().await {
-                Ok(()) => (),
-                Err(e) => async_eprintln!(":err: {e}").await,
-            },
+            Some("switch") => switch_profile().await?,
 
-            Some("list") => match list_profiles().await {
-                Ok(()) => (),
-                Err(e) => async_eprintln!(":err: {e}").await,
-            },
+            Some("list") => list_profiles().await?,
 
             _ => {
                 async_eprintln!(
@@ -127,13 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             Some(_) => {
                 let query = args[2..].join(" ");
 
-                let profile: Profile = match read_config().await {
-                    Ok(profile) => profile,
-                    Err(e) => {
-                        async_eprintln!("{}", e).await;
-                        return Ok(());
-                    }
-                };
+                let profile: Profile = read_config().await?;
 
                 let facets = json!([
                     [format!("categories:{}", profile.loader)],
@@ -144,23 +124,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let fetch_params: Vec<(String, String)> = vec![
                     (
                         "loaders".to_string(),
-                        serde_json::to_string(&[profile.loader])?,
+                        serde_json::to_string(&[&profile.loader])?,
                     ),
                     (
                         "game_versions".to_string(),
-                        serde_json::to_string(&[profile.gameversion])?,
+                        serde_json::to_string(&[&profile.gameversion])?,
                     ),
                 ];
 
                 let client = reqwest::Client::new();
 
-                let files = match search_mods(&query, facets, &client, &fetch_params).await {
-                    Ok(files) => files,
-                    Err(e) => {
-                        async_eprintln!("{}", e).await;
-                        return Ok(());
-                    }
-                };
+                let files = search_mods(&query, facets, &client, &fetch_params, &profile).await?;
 
                 download_multiple_files(files, &profile.modsfolder, &client).await?;
             }
@@ -171,13 +145,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Some("upgrade") | Some("update") => {
             let profile: Profile = read_config().await?;
 
-            let files = match upgrade_mods(&profile).await {
-                Ok(files) => files,
-                Err(e) => {
-                    async_eprintln!("{}", e).await;
-                    return Ok(());
-                }
-            };
+            let files = upgrade_mods(&profile).await?;
 
             let client = reqwest::Client::new();
 
@@ -199,37 +167,64 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         profile.name
                     )
                     .await;
-                    let mut a: u32 = 1;
-                    for (_, i) in versions {
+                    let mut counter: usize = 1;
+                    for (_, version) in versions {
                         async_println!(
                             "[{}] {} ({})",
-                            a,
-                            format!("\x1b[1;97m{}\x1b[0m", i.name),
-                            i.files
+                            counter,
+                            format!("\x1b[{}\x1b[0m", version.name),
+                            version
+                                .files
                                 .iter()
                                 .find(|file| file.primary)
-                                .ok_or(":err: No primary file found")
+                                .ok_or("No primary file found")
                                 .unwrap()
                                 .filename
                         )
                         .await;
-                        a += 1
+                        counter += 1
                     }
                 }
                 Err(e) => {
                     async_eprintln!("{}", e).await;
                     let path = Path::new(&profile.modsfolder);
                     let mut entries = tokio::fs::read_dir(path).await?;
-                    let mut i = 1;
+                    let mut counter: usize = 1;
                     while let Some(entry) = entries.next_entry().await? {
                         if let Some(path) = get_jar_filename(&entry).await {
-                            async_println!("[{}] {}", i, path).await;
-                            i += 1;
+                            async_println!("[{}] {}", counter, path).await;
+                            counter += 1;
                         }
                     }
                 }
             };
         }
+
+        Some("lock") => match args.get(2).map(String::as_str) {
+            Some("add") => {
+                let client = Client::new();
+                let profile = read_config().await?;
+                add_lock(&profile, &client).await?;
+            }
+
+            Some("remove") => {
+                let client = Client::new();
+                let profile = read_config().await?;
+                remove_lock(&profile, &client).await?;
+            }
+
+            Some("list") => {
+                let client = Client::new();
+                let profile = read_config().await?;
+                let locks = list_locks(&client, &profile).await?;
+                for (size, name, filename) in locks {
+                    async_println!("[{}] {} ({})", size, name, filename).await;
+                }
+            }
+
+            Some(_) => async_println!(":: Usage: minefetch lock < add | remove | list >").await,
+            None => (),
+        },
 
         Some(_) => async_println!(":: There is no such command!").await,
 

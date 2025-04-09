@@ -84,6 +84,27 @@ List all installed mods:
 minefetch list
 ```
 
+### Lock mods
+
+Lock, unlock and list your locks with these commands:
+
+- **Add a lock**
+
+```sh
+  minefetch lock add
+```
+
+- **Remove a lock**
+
+```sh
+  minefetch lock remove
+```
+
+- **List locks**
+```sh
+  minefetch lock list
+```
+
 ### Check MineFetch Version
 
 Display the current MineFetch version:
@@ -105,7 +126,7 @@ To build MineFetch from source, ensure you have Git, Rust, and Cargo installed, 
 ```sh
 git clone https://github.com/KirillkoTankisto/minefetch.git
 cd minefetch
-cargo build --release
+./build
 ```
 
 The executable will be located in the `target/release` directory.

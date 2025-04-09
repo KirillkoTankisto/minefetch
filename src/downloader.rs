@@ -64,7 +64,7 @@ pub async fn download_multiple_files(
         let handle = tokio::spawn(async move {
             async_println!(":: Downloading {}", &filename).await;
             let path_str = match sanitized_path.to_str() {
-                Some(s) => s,
+                Some(path) => path,
                 None => {
                     async_eprintln!(":err: Invalid UTF-8 path for {}", filename).await;
                     return; // Exit the task early
@@ -72,7 +72,9 @@ pub async fn download_multiple_files(
             };
             match download_file(path_str, &filename, &url, &client).await {
                 Ok(_) => {}
-                Err(e) => async_eprintln!(":err: Failed to download {}: {}", filename, e).await,
+                Err(error) => {
+                    async_eprintln!(":err: Failed to download {}: {}", filename, error).await
+                }
             }
         });
 
@@ -81,8 +83,8 @@ pub async fn download_multiple_files(
         match deps {
             Some(dep) => {
                 let list = get_dependencies(&dep, &client).await?;
-                for i in list {
-                    async_println!(":deps: {} {}", i.0, i.1).await;
+                for dependency in list {
+                    async_println!(":deps: {} {}", dependency.0, dependency.1).await;
                 }
             }
             None => {}
@@ -92,8 +94,8 @@ pub async fn download_multiple_files(
     }
 
     for handle in handles {
-        if let Err(e) = handle.await {
-            async_eprintln!(":err: Task panicked: {:?}", e).await;
+        if let Err(error) = handle.await {
+            async_eprintln!(":err: Task panicked: {:?}", error).await;
         }
     }
 

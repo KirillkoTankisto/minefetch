@@ -13,7 +13,7 @@ use std::result::Result;
 // External crates
 use crate::async_eprintln;
 use crate::Path;
-use rand::distributions::Alphanumeric;
+use rand::distr::Alphanumeric;
 use rand::Rng;
 use sha1::{Digest, Sha1};
 use tokio::fs::DirEntry;
@@ -22,7 +22,7 @@ use tokio::io::{self, AsyncReadExt};
 /// Generates random 64 char string
 pub async fn generate_hash() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let random_hash = tokio::task::spawn_blocking(|| {
-        rand::thread_rng()
+        rand::rng()
             .sample_iter(&Alphanumeric)
             .take(64)
             .map(char::from)
@@ -42,11 +42,11 @@ pub async fn get_hashes(
     };
 
     let mut hashes: Vec<String> = Vec::new();
-
     let mut tasks = vec![];
 
     while let Some(entry) = entries.next_entry().await? {
         let path = entry.path();
+
         if path.is_file() {
             tasks.push(tokio::task::spawn(async move {
                 let hash = calculate_sha1(&path).await;
@@ -58,8 +58,10 @@ pub async fn get_hashes(
     for task in tasks {
         match task.await {
             Ok(Ok(hash)) => hashes.push(hash),
-            Ok(Err(e)) => async_eprintln!("Error processing hash: {e}").await,
-            Err(e) => async_eprintln!("Task error: {e}").await,
+
+            Ok(Err(error)) => async_eprintln!("Error processing hash: {error}").await,
+
+            Err(error) => async_eprintln!("Task error: {error}").await,
         }
     }
     if hashes.is_empty() {
@@ -88,15 +90,16 @@ pub async fn calculate_sha1<P: AsRef<Path>>(path: P) -> io::Result<String> {
 /// Deletes files in folder with same hash
 pub async fn remove_mods_by_hash(
     modsfolder: &str,
-    hashes_to_remove: &[String],
+    hashes_to_remove: &Vec<&String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut entries = tokio::fs::read_dir(modsfolder).await?;
 
     while let Some(entry) = entries.next_entry().await? {
         let path = entry.path();
+
         if path.is_file() {
             let file_hash = calculate_sha1(&path).await?;
-            if hashes_to_remove.contains(&file_hash) {
+            if hashes_to_remove.contains(&&file_hash) {
                 tokio::fs::remove_file(&path).await?;
             }
         }
@@ -108,7 +111,8 @@ pub async fn remove_mods_by_hash(
 /// Finds all .jar files in directory
 pub async fn get_jar_filename(entry: &DirEntry) -> Option<String> {
     let path = entry.path();
-    if path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("jar") {
+
+    if path.is_file() && path.extension().and_then(|extension| extension.to_str()) == Some("jar") {
         return path
             .file_name()
             .and_then(|name| name.to_str())
