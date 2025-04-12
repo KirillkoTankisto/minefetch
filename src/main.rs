@@ -38,7 +38,7 @@ use utils::get_jar_filename;
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match initialise().await {
         Ok(_) => (),
-        Err(e) => async_eprintln!(":err: {e}").await,
+        Err(error) => async_eprintln!(":err: {error}").await,
     };
     Ok(())
 }
@@ -185,8 +185,8 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         counter += 1
                     }
                 }
-                Err(e) => {
-                    async_eprintln!("{}", e).await;
+                Err(error) => {
+                    async_eprintln!(":err: {}", error).await;
                     let path = Path::new(&profile.modsfolder);
                     let mut entries = tokio::fs::read_dir(path).await?;
                     let mut counter: usize = 1;

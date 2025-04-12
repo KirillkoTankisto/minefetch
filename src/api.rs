@@ -7,8 +7,9 @@
 
 */
 
+use crate::consts::USER_AGENT;
 // Imports
-use crate::async_println;
+use crate::{async_eprintln, async_println};
 use crate::mfio::ainput;
 use crate::profile::{get_locks, remove_locked_ones};
 use crate::structs::{Dependency, Hash, MFHashMap, Object2, Profile, Search, VersionsList};
@@ -38,7 +39,7 @@ pub async fn fetch_latest_version(
     // Send the request.
     let response = client
         .get(url)
-        .header("User-Agent", "KirillkoTankisto")
+        .header("User-Agent", USER_AGENT)
         .send()
         .await?
         .text()
@@ -97,7 +98,7 @@ pub async fn search_mods(
 
     let response = client
         .get(url)
-        .header("User-Agent", "KirillkoTankisto")
+        .header("User-Agent", USER_AGENT)
         .send()
         .await?
         .text()
@@ -160,7 +161,7 @@ pub async fn upgrade_mods(
     let client = reqwest::Client::new();
     let response = client
         .post("https://api.modrinth.com/v2/version_files/update")
-        .header("User-Agent", "KirillkoTankisto")
+        .header("User-Agent", USER_AGENT)
         .header("Content-Type", "application/json")
         .body(hashes_send)
         .send()
@@ -211,6 +212,7 @@ pub async fn list_mods(
     profile: &Profile,
     client: &reqwest::Client,
 ) -> Result<(usize, MFHashMap), Box<dyn std::error::Error + Send + Sync>> {
+    
     let hashes = Hash {
         hashes: match get_hashes(&profile.modsfolder).await {
             Ok(hashes) => hashes,
@@ -221,11 +223,12 @@ pub async fn list_mods(
         game_versions: None,
     };
     let hashes_send = serde_json::to_string(&hashes)?;
+    
 
     let url = "https://api.modrinth.com/v2/version_files";
     let response = client
         .post(url)
-        .header("User-Agent", "KirillkoTankisto")
+        .header("User-Agent", USER_AGENT)
         .header("Content-Type", "application/json")
         .body(hashes_send)
         .send()
@@ -233,7 +236,10 @@ pub async fn list_mods(
         .text()
         .await?;
 
+    async_eprintln!("{:#?}", response).await;
+    
     let versions: MFHashMap = serde_json::from_str(&response)?;
+    async_println!("test").await;
     Ok((versions.len(), versions))
 }
 
@@ -251,7 +257,7 @@ pub async fn get_dependencies(
         );
         let response = client
             .get(url)
-            .header("User-Agent", "KirillkoTankisto")
+            .header("User-Agent", USER_AGENT)
             .send()
             .await?
             .text()

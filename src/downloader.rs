@@ -7,6 +7,7 @@
 
 */
 
+use crate::consts::USER_AGENT;
 // Standard imports
 use crate::{async_eprintln, async_println, get_dependencies, Dependency};
 use std::path::{Path, PathBuf};
@@ -27,7 +28,7 @@ pub async fn download_file(
 
     let path = std::path::Path::new(path).join(&filename);
 
-    let mut response = client.get(url).send().await?;
+    let mut response = client.get(url).header("User-Agent", USER_AGENT).send().await?;
 
     let mut file = tokio::fs::File::create(path).await?;
 

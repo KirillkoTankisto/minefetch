@@ -377,6 +377,7 @@ pub async fn add_lock(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let (_, versions) = list_mods(profile, client).await?;
     let mut locklist: Vec<(String, String)> = Vec::new();
+    
     for i in versions {
         locklist.push((
             i.1.files
@@ -408,7 +409,6 @@ pub async fn add_lock(
             .ok_or_else(|| "Cannot translate pretty text to system one")?,
         Err(_) => return Err("Why did you do that?".into()),
     };
-
     let profile = read_config().await?;
     let mut locks = match get_locks(&profile).await {
         Ok(locks) => locks,
