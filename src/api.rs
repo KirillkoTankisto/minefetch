@@ -9,7 +9,7 @@
 
 use crate::consts::USER_AGENT;
 // Imports
-use crate::{async_eprintln, async_println};
+use crate::async_println;
 use crate::mfio::ainput;
 use crate::profile::{get_locks, remove_locked_ones};
 use crate::structs::{Dependency, Hash, MFHashMap, Object2, Profile, Search, VersionsList};
@@ -235,11 +235,8 @@ pub async fn list_mods(
         .await?
         .text()
         .await?;
-
-    async_eprintln!("{:#?}", response).await;
     
     let versions: MFHashMap = serde_json::from_str(&response)?;
-    async_println!("test").await;
     Ok((versions.len(), versions))
 }
 
