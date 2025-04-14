@@ -38,7 +38,7 @@ pub async fn get_hashes(
 ) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
     let mut entries = match tokio::fs::read_dir(path).await {
         Ok(entries) => entries,
-        Err(_) => return Err(":: There are no mods yet".into()),
+        Err(_) => return Err(":out: There are no mods yet".into()),
     };
 
     let mut hashes: Vec<String> = Vec::new();

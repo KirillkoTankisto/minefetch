@@ -22,13 +22,17 @@ pub async fn download_file(
     path: &str,
     filename: &str,
     url: &str,
-    client: &reqwest::Client,
+    client: &Client,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tokio::fs::create_dir_all(path).await?;
 
     let path = std::path::Path::new(path).join(&filename);
 
-    let mut response = client.get(url).header("User-Agent", USER_AGENT).send().await?;
+    let mut response = client
+        .get(url)
+        .header("User-Agent", USER_AGENT)
+        .send()
+        .await?;
 
     let mut file = tokio::fs::File::create(path).await?;
 
@@ -43,7 +47,7 @@ pub async fn download_file(
 pub async fn download_multiple_files(
     files: Vec<(String, String, Option<Vec<Dependency>>)>,
     path: &str,
-    client: &reqwest::Client,
+    client: &Client,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut handles = Vec::new();
     let base_path = Path::new(path);
@@ -63,7 +67,7 @@ pub async fn download_multiple_files(
         }
 
         let handle = tokio::spawn(async move {
-            async_println!(":: Downloading {}", &filename).await;
+            async_println!(":out: Downloading {}", &filename).await;
             let path_str = match sanitized_path.to_str() {
                 Some(path) => path,
                 None => {

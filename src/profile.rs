@@ -18,11 +18,12 @@ use inquire::{
     ui::{Color, RenderConfig, Styled},
     Select,
 };
+use reqwest::Client;
 use rfd::AsyncFileDialog;
 
 use crate::api::list_mods;
 // Internal imports
-use crate::mfio::{ainput, press_enter};
+use crate::mfio::{ainput, press_enter, MFText};
 use crate::structs::{Config, Locks, MFHashMap, Profile};
 use crate::utils::generate_hash;
 use crate::{async_print, async_println};
@@ -45,7 +46,7 @@ pub async fn read_config() -> Result<Profile, Box<dyn std::error::Error + Send +
         .profile
         .into_iter()
         .find(|profile| profile.active) // Searching for only active one
-        .ok_or_else(|| ":: No active profile found".into())
+        .ok_or_else(|| ":out: No active profile found".into())
 }
 
 /// Returns full Config
@@ -63,7 +64,7 @@ pub async fn read_full_config() -> Result<Config, Box<dyn std::error::Error + Se
 
 /// Creates config file
 pub async fn create_profile() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    async_print!(":: Press enter to choose mods directory").await;
+    async_print!(":out: Press enter to choose mods directory").await;
 
     press_enter().await?;
 
@@ -75,7 +76,7 @@ pub async fn create_profile() -> Result<(), Box<dyn std::error::Error + Send + S
             .to_string(),
         None => {
             let buffer = ainput(
-                ":: Cannot launch the gui folder picker\n:: Enter the path to mods folder: ",
+                ":out: Cannot launch the gui folder picker\n:: Enter the path to mods folder: ",
             )
             .await?;
             let path = Path::new(&buffer);
@@ -86,7 +87,7 @@ pub async fn create_profile() -> Result<(), Box<dyn std::error::Error + Send + S
         }
     };
 
-    let gameversion = ainput(":: Type a Minecraft version: ").await?;
+    let gameversion = ainput(":out: Type a Minecraft version: ").await?;
 
     let loaders = vec![
         ("Quilt", "quilt"),
@@ -103,7 +104,7 @@ pub async fn create_profile() -> Result<(), Box<dyn std::error::Error + Send + S
         .with_highlighted_option_prefix(option_prefix)
         .with_prompt_prefix(prompt_prefix);
 
-    let loader = match Select::new(":: Choose a loader\n", choices)
+    let loader = match Select::new(":out: Choose a loader\n", choices)
         .without_filtering()
         .without_help_message()
         .with_render_config(render_cfg)
@@ -117,7 +118,7 @@ pub async fn create_profile() -> Result<(), Box<dyn std::error::Error + Send + S
         Err(_) => return Err("Why did you do that?".into()),
     };
 
-    let name = ainput(":: What should this profile be called? ").await?;
+    let name = ainput(":out: What should this profile be called? ").await?;
 
     let mut current_config = match read_full_config().await {
         Ok(config) => config,
@@ -179,7 +180,7 @@ pub async fn delete_profile() -> Result<(), Box<dyn std::error::Error + Send + S
         .with_highlighted_option_prefix(option_prefix)
         .with_prompt_prefix(prompt_prefix);
 
-    let selected_value = match Select::new(":: Which profile to delete?\n", choices.clone())
+    let selected_value = match Select::new(":out: Which profile to delete?\n", choices.clone())
         .without_filtering()
         .without_help_message()
         .with_render_config(render_cfg)
@@ -248,13 +249,25 @@ pub async fn switch_profile() -> Result<(), Box<dyn std::error::Error + Send + S
         .map(|profile| {
             let name = if profile.active {
                 format!(
-                    "* {} [{} {}] [{}]",
-                    profile.name, profile.loader, profile.gameversion, profile.modsfolder
+                    "[{}{}*{}] {} [{} {}] [{}]",
+                    MFText::Bold,
+                    MFText::Underline,
+                    MFText::Reset,
+                    profile.name,
+                    profile.loader,
+                    profile.gameversion,
+                    profile.modsfolder
                 )
             } else {
                 format!(
-                    "  {} [{} {}] [{}]",
-                    profile.name, profile.loader, profile.gameversion, profile.modsfolder
+                    "[{}{} {}] {} [{} {}] [{}]",
+                    MFText::Bold,
+                    MFText::Underline,
+                    MFText::Reset,
+                    profile.name,
+                    profile.loader,
+                    profile.gameversion,
+                    profile.modsfolder
                 )
             };
             (name, profile.hash.clone())
@@ -269,7 +282,7 @@ pub async fn switch_profile() -> Result<(), Box<dyn std::error::Error + Send + S
         .with_highlighted_option_prefix(option_prefix)
         .with_prompt_prefix(prompt_prefix);
 
-    let selected_value = match Select::new(":: Which profile to switch to?\n", choices.clone())
+    let selected_value = match Select::new(":out: Which profile to switch to?\n", choices.clone())
         .without_filtering()
         .without_help_message()
         .with_render_config(render_cfg)
@@ -321,7 +334,10 @@ pub async fn list_profiles() -> Result<(), Box<dyn std::error::Error + Send + Sy
     for profile in config.profile {
         if profile.active {
             async_println!(
-                "* {} [{} {}] [{}]",
+                "[{}{}*{}] {} [{} {}] [{}]",
+                MFText::Bold,
+                MFText::Underline,
+                MFText::Reset,
                 profile.name,
                 profile.loader,
                 profile.gameversion,
@@ -330,7 +346,10 @@ pub async fn list_profiles() -> Result<(), Box<dyn std::error::Error + Send + Sy
             .await
         } else {
             async_println!(
-                "  {} [{} {}] [{}]",
+                "[{}{} {}] {} [{} {}] [{}]",
+                MFText::Bold,
+                MFText::Underline,
+                MFText::Reset,
                 profile.name,
                 profile.loader,
                 profile.gameversion,
@@ -373,11 +392,11 @@ pub async fn get_locks(
 
 pub async fn add_lock(
     profile: &Profile,
-    client: &reqwest::Client,
+    client: &Client,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let (_, versions) = list_mods(profile, client).await?;
     let mut locklist: Vec<(String, String)> = Vec::new();
-    
+
     for i in versions {
         locklist.push((
             i.1.files
@@ -396,7 +415,7 @@ pub async fn add_lock(
         .with_highlighted_option_prefix(option_prefix)
         .with_prompt_prefix(prompt_prefix);
 
-    let hash = match Select::new(":: Choose a mod to lock\n", choices)
+    let hash = match Select::new(":out: Choose a mod to lock\n", choices)
         .without_filtering()
         .without_help_message()
         .with_render_config(render_cfg)
@@ -424,7 +443,7 @@ pub async fn add_lock(
 
 pub async fn remove_lock(
     profile: &Profile,
-    client: &reqwest::Client,
+    client: &Client,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut locks = get_locks(&profile).await?;
     let mut locklist: Vec<(String, String)> = Vec::new();
@@ -452,7 +471,7 @@ pub async fn remove_lock(
         .with_highlighted_option_prefix(option_prefix)
         .with_prompt_prefix(prompt_prefix);
 
-    let hash = match Select::new(":: Choose a mod to lock\n", choices)
+    let hash = match Select::new(":out: Choose a mod to unlock\n", choices)
         .without_filtering()
         .without_help_message()
         .with_render_config(render_cfg)
@@ -497,7 +516,7 @@ pub fn get_lock_dir(profile: &Profile) -> PathBuf {
 }
 
 pub async fn list_locks(
-    client: &reqwest::Client,
+    client: &Client,
     profile: &Profile,
 ) -> Result<Vec<(usize, String, String)>, Box<dyn std::error::Error + Send + Sync>> {
     let locks = get_locks(&profile).await?;

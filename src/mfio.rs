@@ -94,3 +94,72 @@ pub async fn ainput(prompt: &str) -> Result<String, Box<dyn std::error::Error + 
 
     Ok(buffer.trim().to_string())
 }
+
+/// ANSI escape codes for formatting
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MFText {
+    // Foreground colors
+    FgBlack,
+    FgRed,
+    FgGreen,
+    FgYellow,
+    FgBlue,
+    FgMagenta,
+    FgCyan,
+    FgWhite,
+    // Background colors
+    BgBlack,
+    BgRed,
+    BgGreen,
+    BgYellow,
+    BgBlue,
+    BgMagenta,
+    BgCyan,
+    BgWhite,
+    // Text styles
+    Bold,
+    Italic,
+    Underline,
+    Blink,
+    // Reset formatting
+    Reset,
+}
+
+impl MFText {
+    pub fn code(&self) -> &'static str {
+        match self {
+            // Foreground colors
+            MFText::FgBlack => "\x1b[30m",
+            MFText::FgRed => "\x1b[31m",
+            MFText::FgGreen => "\x1b[32m",
+            MFText::FgYellow => "\x1b[33m",
+            MFText::FgBlue => "\x1b[34m",
+            MFText::FgMagenta => "\x1b[35m",
+            MFText::FgCyan => "\x1b[36m",
+            MFText::FgWhite => "\x1b[37m",
+            // Background colors
+            MFText::BgBlack => "\x1b[40m",
+            MFText::BgRed => "\x1b[41m",
+            MFText::BgGreen => "\x1b[42m",
+            MFText::BgYellow => "\x1b[43m",
+            MFText::BgBlue => "\x1b[44m",
+            MFText::BgMagenta => "\x1b[45m",
+            MFText::BgCyan => "\x1b[46m",
+            MFText::BgWhite => "\x1b[47m",
+            // Text styles
+            MFText::Bold => "\x1b[1m",
+            MFText::Italic => "\x1b[3m",
+            MFText::Underline => "\x1b[4m",
+            MFText::Blink => "\x1b[5m",
+            // Reset
+            MFText::Reset => "\x1b[0m",
+        }
+    }
+}
+
+impl std::fmt::Display for MFText {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.code())
+    }
+}

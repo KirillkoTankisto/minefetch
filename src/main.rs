@@ -12,6 +12,7 @@ use std::path::Path;
 use std::result::Result;
 use std::vec;
 
+use mfio::MFText;
 use reqwest::Client;
 // External crates
 use serde_json::json;
@@ -49,7 +50,7 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match args.get(1).map(String::as_str) {
         Some("add") => match args.get(2).map(String::as_str) {
             Some(modname) => {
-                async_println!(":: Adding mod...").await;
+                async_println!(":out: Adding mod...").await;
 
                 let profile: Profile = read_config().await?;
 
@@ -64,14 +65,14 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     ),
                 ];
 
-                let client = reqwest::Client::new();
+                let client = Client::new();
 
                 let modversion =
                     fetch_latest_version(&modname.to_string(), &client, &params, &profile).await?;
 
                 download_file(&profile.modsfolder, &modversion.0, &modversion.1, &client).await?;
 
-                async_println!(":: Downloaded {} ({})", &modname, &modversion.0).await;
+                async_println!(":out: Downloaded {} ({})", &modname, &modversion.0).await;
 
                 match modversion.2 {
                     Some(dep) => {
@@ -84,7 +85,7 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 }
             }
 
-            _ => async_println!(":: Usage: minefetch add <modname>").await,
+            _ => async_println!(":out: Usage: minefetch add <modname>").await,
         },
 
         Some("profile") => match args.get(2).map(String::as_str) {
@@ -101,13 +102,13 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             _ => {
                 async_eprintln!(
-                    ":: Usage: minefetch profile < create | delete | delete all | switch | list >"
-                )
+                ":out: Usage: minefetch profile < create | delete | delete all | switch | list >"
+            )
                 .await
             }
         },
 
-        Some("version") => async_println!(":: {} {}", NAME, PROGRAM_VERSION).await,
+        Some("version") => async_println!(":out: {} {}", NAME, PROGRAM_VERSION).await,
 
         Some("search") => match args.get(2) {
             Some(_) => {
@@ -132,37 +133,38 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     ),
                 ];
 
-                let client = reqwest::Client::new();
+                let client = Client::new();
 
                 let files = search_mods(&query, facets, &client, &fetch_params, &profile).await?;
 
                 download_multiple_files(files, &profile.modsfolder, &client).await?;
             }
 
-            None => async_println!(":: Usage: minefetch search <query>").await,
+            None => async_println!(":out: Usage: minefetch search <query>").await,
         },
 
         Some("upgrade") | Some("update") => {
-            let profile: Profile = read_config().await?;
+            let profile = read_config().await?;
+            let client = Client::new();
 
-            let files = upgrade_mods(&profile).await?;
+            let files = upgrade_mods(&profile, &client).await?;
 
-            let client = reqwest::Client::new();
+            let client = Client::new();
 
             download_multiple_files(files, &profile.modsfolder, &client).await?;
         }
 
         Some("list") => {
             let profile: Profile = read_config().await?;
-            let client = reqwest::Client::new();
+            let client = Client::new();
 
             match list_mods(&profile, &client).await {
                 Ok((size, versions)) => {
                     if size == 0 {
-                        return Err(":: There are no mods yet".into());
+                        return Err("There are no mods yet".into());
                     }
                     async_println!(
-                        ":: There are \x1b[1;97m{}\x1b[0m mods in profile {}:",
+                        ":out: There are \x1b[1;97m{}\x1b[0m mods in profile {}:",
                         size,
                         profile.name
                     )
@@ -170,9 +172,13 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     let mut counter: usize = 1;
                     for (_, version) in versions {
                         async_println!(
-                            "[{}] {} ({})",
+                            "[{}{}{}] {}{}{} ({})",
+                            MFText::Bold,
                             counter,
-                            format!("\x1b[{}\x1b[0m", version.name),
+                            MFText::Reset,
+                            MFText::Bold,
+                            version.name,
+                            MFText::Reset,
                             version
                                 .files
                                 .iter()
@@ -218,17 +224,27 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let profile = read_config().await?;
                 let locks = list_locks(&client, &profile).await?;
                 for (size, name, filename) in locks {
-                    async_println!("[{}] {} ({})", size, name, filename).await;
+                    async_println!(
+                        "[{}{}{}] {}{}{} ({})",
+                        MFText::Bold,
+                        size,
+                        MFText::Reset,
+                        MFText::Bold,
+                        name,
+                        MFText::Reset,
+                        filename
+                    )
+                    .await;
                 }
             }
 
-            Some(_) => async_println!(":: Usage: minefetch lock < add | remove | list >").await,
+            Some(_) => async_println!(":out: Usage: minefetch lock < add | remove | list >").await,
             None => (),
         },
 
-        Some(_) => async_println!(":: There is no such command!").await,
+        Some(_) => async_println!(":out: There is no such command!").await,
 
-        None => async_println!(":: No arguments provided").await,
+        None => async_println!(":out: No arguments provided").await,
     }
     Ok(())
 }

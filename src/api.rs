@@ -20,7 +20,7 @@ use serde_json::{self, Value};
 /// Returns filename, url, and optional dependencies.
 pub async fn fetch_latest_version(
     modname: &String,
-    client: &reqwest::Client,
+    client: &Client,
     params: &[(String, String)],
     profile: &Profile,
 ) -> Result<(String, String, Option<Vec<Dependency>>), Box<dyn std::error::Error + Send + Sync>> {
@@ -86,7 +86,7 @@ pub async fn fetch_latest_version(
 pub async fn search_mods(
     query: &String,
     facets: Value,
-    client: &reqwest::Client,
+    client: &Client,
     fetch_params: &[(String, String)],
     profile: &Profile,
 ) -> Result<Vec<(String, String, Option<Vec<Dependency>>)>, Box<dyn std::error::Error + Send + Sync>>
@@ -116,7 +116,7 @@ pub async fn search_mods(
         }
     }
 
-    let selected_string = ainput(":: Select mods to install: ").await?;
+    let selected_string = ainput(":out: Select mods to install: ").await?;
     let selected_string = selected_string.split(' ');
     let mut numbers: Vec<usize> = Vec::new();
     for object in selected_string {
@@ -147,6 +147,7 @@ pub async fn search_mods(
 /// Updates mods to the latest version
 pub async fn upgrade_mods(
     profile: &Profile,
+    client: &Client,
 ) -> Result<Vec<(String, String, Option<Vec<Dependency>>)>, Box<dyn std::error::Error + Send + Sync>>
 {
     let hashes = get_hashes(&profile.modsfolder).await?;
@@ -158,7 +159,6 @@ pub async fn upgrade_mods(
     };
     let hashes_send = serde_json::to_string(&hashes)?;
 
-    let client = reqwest::Client::new();
     let response = client
         .post("https://api.modrinth.com/v2/version_files/update")
         .header("User-Agent", USER_AGENT)
@@ -172,7 +172,16 @@ pub async fn upgrade_mods(
 
     let mut versions: MFHashMap = serde_json::from_str(&response)?;
 
-    let versions = remove_locked_ones(&mut versions, get_locks(profile).await?).await?;
+    let locks: Vec<String> = match get_locks(&profile).await {
+        Ok(locks) => locks,
+        Err(_) => Vec::new(),
+    };
+
+    let versions = if locks.is_empty() {
+        &mut versions
+    } else {
+        remove_locked_ones(&mut versions, locks).await?
+    };
 
     let keys_to_remove: Vec<_> = versions
         .iter()
@@ -204,15 +213,17 @@ pub async fn upgrade_mods(
     }
 
     remove_mods_by_hash(&profile.modsfolder, &hashes_to_remove).await?;
+    if hashes_to_remove.len() == 0 {
+        async_println!(":out: All mods are up to date!").await
+    }
     Ok(new_versions)
 }
 
 /// Lists mods in selected profile
 pub async fn list_mods(
     profile: &Profile,
-    client: &reqwest::Client,
+    client: &Client,
 ) -> Result<(usize, MFHashMap), Box<dyn std::error::Error + Send + Sync>> {
-    
     let hashes = Hash {
         hashes: match get_hashes(&profile.modsfolder).await {
             Ok(hashes) => hashes,
@@ -223,7 +234,6 @@ pub async fn list_mods(
         game_versions: None,
     };
     let hashes_send = serde_json::to_string(&hashes)?;
-    
 
     let url = "https://api.modrinth.com/v2/version_files";
     let response = client
@@ -235,7 +245,7 @@ pub async fn list_mods(
         .await?
         .text()
         .await?;
-    
+
     let versions: MFHashMap = serde_json::from_str(&response)?;
     Ok((versions.len(), versions))
 }
