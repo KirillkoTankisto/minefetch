@@ -8,11 +8,15 @@
 */
 
 // Standard imports
+use std::path::PathBuf;
 use std::result::Result;
 
-// External crates
+// Internal modules
 use crate::async_eprintln;
+use crate::coreutils::get_username;
 use crate::Path;
+
+// External crates
 use rand::distr::Alphanumeric;
 use rand::Rng;
 use sha1::{Digest, Sha1};
@@ -64,6 +68,7 @@ pub async fn get_hashes(
             Err(error) => async_eprintln!("Task error: {error}").await,
         }
     }
+
     if hashes.is_empty() {
         return Err("No valid entries found to calculate hashes".into());
     }
@@ -119,4 +124,29 @@ pub async fn get_jar_filename(entry: &DirEntry) -> Option<String> {
             .map(String::from);
     }
     None
+}
+
+pub async fn get_homedir() -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
+    let username = get_username()?;
+
+    #[cfg(target_os = "linux")]
+    let confdir = PathBuf::from("/home/").join(username);
+
+    #[cfg(any(target_os = "openbsd", target_os = "freebsd", target_os = "netbsd"))]
+    let confdir = PathBuf::from("/usr/home/").join(username);
+
+    #[cfg(target_os = "macos")]
+    let confdir = PathBuf::from("/Users/").join(username);
+
+    #[cfg(target_os = "windows")]
+    let confdir = PathBuf::from("C:\\Users\\").join(username);
+
+    Ok(confdir)
+}
+pub async fn get_confpath() -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
+    let homedir = get_homedir().await?;
+    Ok(homedir
+        .join(".config")
+        .join("minefetch")
+        .join("config.toml"))
 }

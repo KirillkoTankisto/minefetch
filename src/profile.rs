@@ -9,32 +9,23 @@
 
 // Standard imports
 use std::path::{Path, PathBuf};
-use std::process::exit;
 use std::result::Result;
 use std::vec;
 
 // External crates
-use inquire::{
-    ui::{Color, RenderConfig, Styled},
-    Select,
-};
 use reqwest::Client;
 use rfd::AsyncFileDialog;
 
-use crate::api::list_mods;
 // Internal imports
-use crate::mfio::{ainput, press_enter, MFText};
+use crate::api::list_mods;
+use crate::async_println;
+use crate::mfio::{ainput, press_enter, select, MFText};
 use crate::structs::{Config, Locks, MFHashMap, Profile};
-use crate::utils::generate_hash;
-use crate::{async_print, async_println};
+use crate::utils::{generate_hash, get_confpath};
 
 /// Returns single active Profile
 pub async fn read_config() -> Result<Profile, Box<dyn std::error::Error + Send + Sync>> {
-    let home_dir = get_confdir().await?;
-    let config_path = home_dir
-        .join(".config")
-        .join("minefetch")
-        .join("config.toml");
+    let config_path = get_confpath().await?;
 
     let contents = match tokio::fs::read_to_string(&config_path).await {
         Ok(contents) => contents,
@@ -50,13 +41,8 @@ pub async fn read_config() -> Result<Profile, Box<dyn std::error::Error + Send +
 }
 
 /// Returns full Config
-pub async fn read_full_config() -> Result<Config, Box<dyn std::error::Error + Send + Sync>> {
-    let home_dir = get_confdir().await?;
-    let config_path = home_dir
-        .join(".config")
-        .join("minefetch")
-        .join("config.toml");
-
+pub async fn read_full_config() -> Result<Config, Box<dyn std::error::Error + Send + Sync>> { 
+    let config_path = get_confpath().await?;
     let contents = tokio::fs::read_to_string(&config_path).await?;
     let config: Config = toml::from_str(&contents)?;
     Ok(config)
@@ -64,7 +50,7 @@ pub async fn read_full_config() -> Result<Config, Box<dyn std::error::Error + Se
 
 /// Creates config file
 pub async fn create_profile() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    async_print!(":out: Press enter to choose mods directory").await;
+    async_println!(":out: Press enter to choose mods directory").await;
 
     press_enter().await?;
 
@@ -89,34 +75,14 @@ pub async fn create_profile() -> Result<(), Box<dyn std::error::Error + Send + S
 
     let gameversion = ainput(":out: Type a Minecraft version: ").await?;
 
-    let loaders = vec![
-        ("Quilt", "quilt"),
-        ("Fabric", "fabric"),
-        ("Forge", "forge"),
-        ("NeoForge", "neoforge"),
+    let loaders: Vec<(String, String)> = vec![
+        ("Quilt".to_string(), "quilt".to_string()),
+        ("Fabric".to_string(), "fabric".to_string()),
+        ("Forge".to_string(), "forge".to_string()),
+        ("NeoForge".to_string(), "neoforge".to_string()),
     ];
 
-    let choices: Vec<_> = loaders.iter().map(|(label, _value)| label).collect();
-
-    let prompt_prefix = Styled::new("");
-    let option_prefix = Styled::new(">>").with_fg(Color::DarkGreen);
-    let render_cfg: RenderConfig = RenderConfig::empty()
-        .with_highlighted_option_prefix(option_prefix)
-        .with_prompt_prefix(prompt_prefix);
-
-    let loader = match Select::new(":out: Choose a loader\n", choices)
-        .without_filtering()
-        .without_help_message()
-        .with_render_config(render_cfg)
-        .prompt()
-    {
-        Ok(selection) => loaders
-            .iter()
-            .find(|(label, _)| label == selection)
-            .map(|(_, value)| value.to_string())
-            .ok_or_else(|| "Cannot translate pretty text to system one")?,
-        Err(_) => return Err("Why did you do that?".into()),
-    };
+    let loader = select("Choose a loader", loaders).await?;
 
     let name = ainput(":out: What should this profile be called? ").await?;
 
@@ -141,12 +107,7 @@ pub async fn create_profile() -> Result<(), Box<dyn std::error::Error + Send + S
     current_config.profile.push(new_profile);
 
     let string_toml = toml::to_string(&current_config)?;
-
-    let home_dir = get_confdir().await?;
-    let config_path = home_dir
-        .join(".config")
-        .join("minefetch")
-        .join("config.toml");
+    let config_path = get_confpath().await?;
 
     tokio::fs::write(config_path, string_toml).await?;
 
@@ -171,46 +132,14 @@ pub async fn delete_profile() -> Result<(), Box<dyn std::error::Error + Send + S
     if profiles.is_empty() {
         return Err("There are no profiles yet".into());
     };
-
-    let choices: Vec<_> = profiles.iter().map(|(label, _)| label).collect();
-
-    let prompt_prefix = Styled::new("");
-    let option_prefix = Styled::new(">>").with_fg(Color::DarkGreen);
-    let render_cfg: RenderConfig = RenderConfig::empty()
-        .with_highlighted_option_prefix(option_prefix)
-        .with_prompt_prefix(prompt_prefix);
-
-    let selected_value = match Select::new(":out: Which profile to delete?\n", choices.clone())
-        .without_filtering()
-        .without_help_message()
-        .with_render_config(render_cfg)
-        .prompt()
-    {
-        Ok(selection) => match profiles
-            .iter()
-            .find(|(label, _)| &*label == selection) // Notice the dereference here
-            .map(|(_, value)| value.clone())
-            .ok_or_else(|| ":err: Cannot translate pretty text to system one")
-        {
-            Ok(string) => string,
-            Err(error) => return Err(error.into()),
-        },
-        Err(_) => {
-            async_println!(":err: Why did you do that?").await;
-            exit(0)
-        }
-    };
+    let selected_value = select("Which profile to delete?", profiles).await?;
 
     config
         .profile
         .retain(|profile| profile.hash != selected_value);
 
     let string_toml = toml::to_string(&config)?;
-    let home_dir = get_confdir().await?;
-    let config_path = home_dir
-        .join(".config")
-        .join("minefetch")
-        .join("config.toml");
+    let config_path = get_confpath().await?;
 
     tokio::fs::write(config_path, string_toml).await?;
 
@@ -225,11 +154,9 @@ pub async fn delete_all_profiles() -> Result<(), Box<dyn std::error::Error + Sen
             return Err("There's no config yet, type minefetch profile create".into());
         }
     };
-    let home_dir = get_confdir().await?;
-    let config_path = home_dir
-        .join(".config")
-        .join("minefetch")
-        .join("config.toml");
+
+    let config_path = get_confpath().await?;
+
     tokio::fs::remove_file(config_path).await?;
     Ok(())
 }
@@ -274,34 +201,7 @@ pub async fn switch_profile() -> Result<(), Box<dyn std::error::Error + Send + S
         })
         .collect();
 
-    let choices: Vec<_> = profiles.iter().map(|(label, _)| label).collect();
-
-    let prompt_prefix = Styled::new("");
-    let option_prefix = Styled::new(">>").with_fg(Color::DarkGreen);
-    let render_cfg: RenderConfig = RenderConfig::empty()
-        .with_highlighted_option_prefix(option_prefix)
-        .with_prompt_prefix(prompt_prefix);
-
-    let selected_value = match Select::new(":out: Which profile to switch to?\n", choices.clone())
-        .without_filtering()
-        .without_help_message()
-        .with_render_config(render_cfg)
-        .prompt()
-    {
-        Ok(selection) => match profiles
-            .iter()
-            .find(|(label, _)| &*label == selection) // Notice the dereference here
-            .map(|(_, value)| value.clone())
-            .ok_or_else(|| "Cannot translate pretty text to system one")
-        {
-            Ok(string) => string,
-            Err(error) => return Err(error.into()),
-        },
-        Err(_) => {
-            async_println!(":err: Why did you do that?").await;
-            exit(0)
-        }
-    };
+    let selected_value = select("Which profile to switch to?", profiles).await?;
 
     for profile in config.profile.iter_mut() {
         if profile.hash == selected_value {
@@ -312,12 +212,8 @@ pub async fn switch_profile() -> Result<(), Box<dyn std::error::Error + Send + S
     }
 
     let string_toml = toml::to_string(&config)?;
-    let home_dir = get_confdir().await?;
-    let config_path = home_dir
-        .join(".config")
-        .join("minefetch")
-        .join("config.toml");
-
+    let config_path = get_confpath().await?;
+    
     tokio::fs::write(config_path, string_toml).await?;
 
     Ok(())
@@ -361,18 +257,6 @@ pub async fn list_profiles() -> Result<(), Box<dyn std::error::Error + Send + Sy
     Ok(())
 }
 
-/// Returns home dir. Hopefully fixes problems on Windows
-pub async fn get_confdir() -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
-    let platform = whoami::platform().to_string();
-    let confdir = if platform == "Windows" {
-        PathBuf::from(format!("C:\\Users\\{}", whoami::username()))
-    } else {
-        home::home_dir().ok_or(":err: Couldn't find the home dir")?
-    };
-
-    Ok(confdir)
-}
-
 pub async fn get_locks(
     profile: &Profile,
 ) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
@@ -408,34 +292,19 @@ pub async fn add_lock(
         ))
     }
 
-    let choices: Vec<_> = locklist.iter().map(|(label, _value)| label).collect();
-    let prompt_prefix = Styled::new("");
-    let option_prefix = Styled::new(">>").with_fg(Color::DarkGreen);
-    let render_cfg: RenderConfig = RenderConfig::empty()
-        .with_highlighted_option_prefix(option_prefix)
-        .with_prompt_prefix(prompt_prefix);
+    let hash = select("Choose a mod to lock", locklist).await?;
 
-    let hash = match Select::new(":out: Choose a mod to lock\n", choices)
-        .without_filtering()
-        .without_help_message()
-        .with_render_config(render_cfg)
-        .prompt()
-    {
-        Ok(hashes) => locklist
-            .iter()
-            .find(|(label, _)| label == hashes)
-            .map(|(_, value)| value.to_string())
-            .ok_or_else(|| "Cannot translate pretty text to system one")?,
-        Err(_) => return Err("Why did you do that?".into()),
-    };
     let profile = read_config().await?;
+
     let mut locks = match get_locks(&profile).await {
         Ok(locks) => locks,
         Err(_) => Vec::new(),
     };
     locks.push(hash);
+
     let new_locks = Locks { lock: locks };
     let locks_path = get_lock_dir(&profile);
+
     tokio::fs::write(locks_path, toml::to_string_pretty(&new_locks)?).await?;
 
     Ok(())
@@ -464,26 +333,8 @@ pub async fn remove_lock(
         };
         locklist.push((format!("{} ({})", name, filename), lock.to_string()));
     }
-    let choices: Vec<_> = locklist.iter().map(|(label, _value)| label).collect();
-    let prompt_prefix = Styled::new("");
-    let option_prefix = Styled::new(">>").with_fg(Color::DarkGreen);
-    let render_cfg: RenderConfig = RenderConfig::empty()
-        .with_highlighted_option_prefix(option_prefix)
-        .with_prompt_prefix(prompt_prefix);
 
-    let hash = match Select::new(":out: Choose a mod to unlock\n", choices)
-        .without_filtering()
-        .without_help_message()
-        .with_render_config(render_cfg)
-        .prompt()
-    {
-        Ok(hashes) => locklist
-            .iter()
-            .find(|(label, _)| label == hashes)
-            .map(|(_, value)| value.to_string())
-            .ok_or_else(|| "Cannot translate pretty text to system one")?,
-        Err(_) => return Err("Why did you do that?".into()),
-    };
+    let hash = select("Choose a mod to unlock", locklist).await?;
 
     locks.retain(|lock| lock != &hash);
 
@@ -491,7 +342,7 @@ pub async fn remove_lock(
 
     let locks_to_str = match toml::to_string_pretty(&locks) {
         Ok(locks) => locks,
-        Err(e) => return Err(e.into()),
+        Err(error) => return Err(error.into()),
     };
 
     let lockspath = get_lock_dir(&profile);

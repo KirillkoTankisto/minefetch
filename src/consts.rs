@@ -8,5 +8,5 @@
 */
 
 pub const NAME: &str = "MineFetch";
-pub const PROGRAM_VERSION: &str = "1.4.3";
-pub const USER_AGENT: &str = "KirillkoTankisto/minefetch/1.4.3 (kirsergeev@icloud.com)";
+pub const PROGRAM_VERSION: &str = "1.5.0";
+pub const USER_AGENT: &str = "KirillkoTankisto/minefetch/1.5.0 (kirsergeev@icloud.com)";

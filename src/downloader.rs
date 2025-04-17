@@ -7,13 +7,15 @@
 
 */
 
+// Internal modules
 use crate::consts::USER_AGENT;
-// Standard imports
 use crate::{async_eprintln, async_println, get_dependencies, Dependency};
+
+// Standard imports
 use std::path::{Path, PathBuf};
 use std::result::Result;
-// External crates
 
+// External crates
 use reqwest::Client;
 use tokio::io::AsyncWriteExt;
 

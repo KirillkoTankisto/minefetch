@@ -12,14 +12,14 @@ use std::path::Path;
 use std::result::Result;
 use std::vec;
 
-use mfio::MFText;
-use reqwest::Client;
 // External crates
+use reqwest::Client;
 use serde_json::json;
 
 // Internal modules
 mod api;
 mod consts;
+mod coreutils;
 mod downloader;
 mod mfio;
 mod profile;
@@ -28,13 +28,13 @@ mod utils;
 use api::*;
 use consts::*;
 use downloader::*;
+use mfio::MFText;
 use profile::{
     add_lock, create_profile, delete_all_profiles, delete_profile, list_locks, list_profiles,
     read_config, remove_lock, switch_profile,
 };
 use structs::*;
-use utils::get_jar_filename;
-
+use utils::{get_confpath, get_jar_filename};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match initialise().await {
@@ -241,6 +241,11 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             Some(_) => async_println!(":out: Usage: minefetch lock < add | remove | list >").await,
             None => (),
         },
+
+        Some("test") => {
+            let path = get_confpath().await?;
+            async_println!("{}", path.display()).await;
+        }
 
         Some(_) => async_println!(":out: There is no such command!").await,
 

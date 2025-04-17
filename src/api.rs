@@ -7,13 +7,15 @@
 
 */
 
-use crate::consts::USER_AGENT;
-// Imports
+// Internal modules
 use crate::async_println;
+use crate::consts::USER_AGENT;
 use crate::mfio::ainput;
 use crate::profile::{get_locks, remove_locked_ones};
 use crate::structs::{Dependency, Hash, MFHashMap, Object2, Profile, Search, VersionsList};
 use crate::utils::{get_hashes, remove_mods_by_hash};
+
+// External crates
 use reqwest::Client;
 use serde_json::{self, Value};
 

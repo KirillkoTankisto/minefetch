@@ -8,7 +8,8 @@
 */
 
 // External crates
-use tokio::io::{self, AsyncBufReadExt, AsyncReadExt, BufReader};
+use console::{Key, Term};
+use tokio::io::{self, AsyncBufReadExt, BufReader};
 
 /// Macro for async std output (with \n)
 #[macro_export]
@@ -74,12 +75,18 @@ macro_rules! async_print {
 }
 
 /// Press enter to continue functionality
-pub async fn press_enter() -> Result<(), tokio::io::Error> {
-    let mut stdin = io::stdin();
+pub async fn press_enter() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let term = Term::stdout();
 
-    let mut buffer = [0u8; 1];
+    loop {
+        let key = term.read_key()?;
 
-    stdin.read_exact(&mut buffer).await?;
+        match key {
+            Key::Enter => break,
+            Key::Char('q') => return Err("The operation has been cancelled".into()),
+            _ => (),
+        }
+    }
 
     Ok(())
 }
@@ -161,5 +168,64 @@ impl MFText {
 impl std::fmt::Display for MFText {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.code())
+    }
+}
+
+/// Size of view in select menu
+const VIEWPORT_SIZE: usize = 7;
+
+/// A replacement for inquire. Works better
+pub async fn select(prompt: &str, options: Vec<(String, String)>) -> io::Result<String> {
+    if options.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "No options provided",
+        ));
+    }
+
+    let term = Term::stdout();
+    let mut index = 0;
+    let total = options.len();
+
+    async_println!(":out: {prompt}").await;
+
+    loop {
+        let start = if total <= VIEWPORT_SIZE {
+            0
+        } else if index < VIEWPORT_SIZE / 2 {
+            0
+        } else if index > total - (VIEWPORT_SIZE / 2 + 1) {
+            total - VIEWPORT_SIZE
+        } else {
+            index - VIEWPORT_SIZE / 2
+        };
+
+        let end = (start + VIEWPORT_SIZE).min(total);
+        for (i, (label, _)) in options.iter().enumerate().skip(start).take(end - start) {
+            if i == index {
+                async_println!(">> {label}").await;
+            } else {
+                async_println!("   {label}").await;
+            }
+        }
+
+        match term.read_key()? {
+            Key::ArrowUp => index = (index + options.len() - 1) % options.len(),
+            Key::ArrowDown => index = (index + 1) % options.len(),
+            Key::Enter => {
+                term.clear_last_lines(end - start)?;
+                return Ok(options[index].1.to_string());
+            }
+            Key::Escape | Key::Char('q') => {
+                term.clear_last_lines(end - start)?;
+                return Err(io::Error::new(
+                    io::ErrorKind::Interrupted,
+                    "Selection cancelled",
+                ));
+            }
+            _ => {}
+        }
+
+        term.clear_last_lines(end - start)?;
     }
 }
