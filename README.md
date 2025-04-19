@@ -113,6 +113,14 @@ Display the current MineFetch version:
 minefetch version
 ```
 
+### Help
+
+Display help message:
+
+```sh
+minefetch help
+```
+
 ## Installation
 
 ### Download Pre-built Binary
