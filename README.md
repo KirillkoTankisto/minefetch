@@ -129,7 +129,7 @@ cd minefetch
 ./build
 ```
 
-The executable will be located in the `target/release` directory.
+The executable will be located in the `release` directory.
 
 ## Contact
 
