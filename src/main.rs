@@ -21,6 +21,7 @@ mod api;
 mod consts;
 mod coreutils;
 mod downloader;
+mod helpmsg;
 mod mfio;
 mod profile;
 mod structs;
@@ -28,13 +29,15 @@ mod utils;
 use api::*;
 use consts::*;
 use downloader::*;
+use helpmsg::display_help_msg;
 use mfio::MFText;
 use profile::{
     add_lock, create_profile, delete_all_profiles, delete_profile, list_locks, list_profiles,
     read_config, remove_lock, switch_profile,
 };
 use structs::*;
-use utils::{get_confpath, get_jar_filename};
+use utils::get_jar_filename;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match initialise().await {
@@ -242,12 +245,14 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             None => (),
         },
 
-        Some("test") => {
-            let path = get_confpath().await?;
-            async_println!("{}", path.display()).await;
+        Some("help") => {
+            display_help_msg(&HELP_MESSAGE).await;
         }
 
-        Some(_) => async_println!(":out: There is no such command!").await,
+        Some(_) => {
+            async_println!(":out: There is no such command! Type 'minefetch help' for help message")
+                .await
+        }
 
         None => async_println!(":out: No arguments provided").await,
     }

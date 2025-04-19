@@ -143,6 +143,7 @@ pub async fn get_homedir() -> Result<PathBuf, Box<dyn std::error::Error + Send +
 
     Ok(confdir)
 }
+
 pub async fn get_confpath() -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
     let homedir = get_homedir().await?;
     Ok(homedir
