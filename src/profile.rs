@@ -21,7 +21,7 @@ use crate::api::list_mods;
 use crate::async_println;
 use crate::mfio::{ainput, press_enter, select, MFText};
 use crate::structs::{Config, Locks, MFHashMap, Profile};
-use crate::utils::{generate_hash, get_confpath};
+use crate::utils::{generate_hash, get_confdir, get_confpath};
 
 /// Returns single active Profile
 pub async fn read_config() -> Result<Profile, Box<dyn std::error::Error + Send + Sync>> {
@@ -41,7 +41,7 @@ pub async fn read_config() -> Result<Profile, Box<dyn std::error::Error + Send +
 }
 
 /// Returns full Config
-pub async fn read_full_config() -> Result<Config, Box<dyn std::error::Error + Send + Sync>> { 
+pub async fn read_full_config() -> Result<Config, Box<dyn std::error::Error + Send + Sync>> {
     let config_path = get_confpath().await?;
     let contents = tokio::fs::read_to_string(&config_path).await?;
     let config: Config = toml::from_str(&contents)?;
@@ -108,7 +108,9 @@ pub async fn create_profile() -> Result<(), Box<dyn std::error::Error + Send + S
 
     let string_toml = toml::to_string(&current_config)?;
     let config_path = get_confpath().await?;
+    let config_dir = get_confdir().await?;
 
+    tokio::fs::create_dir_all(config_dir).await?;
     tokio::fs::write(config_path, string_toml).await?;
 
     Ok(())
@@ -213,7 +215,7 @@ pub async fn switch_profile() -> Result<(), Box<dyn std::error::Error + Send + S
 
     let string_toml = toml::to_string(&config)?;
     let config_path = get_confpath().await?;
-    
+
     tokio::fs::write(config_path, string_toml).await?;
 
     Ok(())

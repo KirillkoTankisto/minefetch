@@ -151,3 +151,8 @@ pub async fn get_confpath() -> Result<PathBuf, Box<dyn std::error::Error + Send 
         .join("minefetch")
         .join("config.toml"))
 }
+
+pub async fn get_confdir() -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
+    let homedir = get_homedir().await?;
+    Ok(homedir.join(".config").join("minefetch"))
+}

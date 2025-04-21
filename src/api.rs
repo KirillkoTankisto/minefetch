@@ -54,7 +54,10 @@ pub async fn fetch_latest_version(
     // Get the first version.
     let version = parsed.get(0).ok_or("No versions available")?;
 
-    let locks = get_locks(&profile).await?;
+    let locks = match get_locks(&profile).await {
+        Ok(locks) => locks,
+        Err(_) => Vec::new(),
+    };
 
     for lock in locks {
         if version
