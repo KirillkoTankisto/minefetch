@@ -10,7 +10,6 @@
 // Standard imports
 use std::path::Path;
 use std::result::Result;
-use std::vec;
 
 // External crates
 use reqwest::Client;
@@ -57,21 +56,18 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
                 let profile: Profile = read_config().await?;
 
-                let params = vec![
+                let params = &[
+                    ("loaders", &serde_json::to_string(&[&profile.loader])?),
                     (
-                        "loaders".to_string(),
-                        serde_json::to_string(&[&profile.loader])?,
-                    ),
-                    (
-                        "game_versions".to_string(),
-                        serde_json::to_string(&[&profile.gameversion])?,
+                        "game_versions",
+                        &serde_json::to_string(&[&profile.gameversion])?,
                     ),
                 ];
 
                 let client = Client::new();
 
                 let modversion =
-                    fetch_latest_version(&modname.to_string(), &client, &params, &profile).await?;
+                    fetch_latest_version(&modname.to_string(), &client, params, &profile).await?;
 
                 download_file(&profile.modsfolder, &modversion.0, &modversion.1, &client).await?;
 
@@ -103,12 +99,10 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             Some("list") => list_profiles().await?,
 
-            _ => {
-                async_eprintln!(
+            _ => async_eprintln!(
                 ":out: Usage: minefetch profile < create | delete | delete all | switch | list >"
             )
-                .await
-            }
+            .await,
         },
 
         Some("version") => async_println!(":out: {} {}", NAME, PROGRAM_VERSION).await,
@@ -125,20 +119,17 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     ["project_type:mod"],
                 ]);
 
-                let fetch_params: Vec<(String, String)> = vec![
+                let params = &[
+                    ("loaders", &serde_json::to_string(&[&profile.loader])?),
                     (
-                        "loaders".to_string(),
-                        serde_json::to_string(&[&profile.loader])?,
-                    ),
-                    (
-                        "game_versions".to_string(),
-                        serde_json::to_string(&[&profile.gameversion])?,
+                        "game_versions",
+                        &serde_json::to_string(&[&profile.gameversion])?,
                     ),
                 ];
 
                 let client = Client::new();
 
-                let files = search_mods(&query, facets, &client, &fetch_params, &profile).await?;
+                let files = search_mods(&query, facets, &client, params, &profile).await?;
 
                 download_multiple_files(files, &profile.modsfolder, &client).await?;
             }
@@ -247,6 +238,10 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         Some("help") => {
             display_help_msg(&HELP_MESSAGE).await;
+        }
+
+        Some("debug") => {
+            println!(":dbg: {} {} {}", NAME, PROGRAM_VERSION, USER_AGENT);
         }
 
         Some(_) => {

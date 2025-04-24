@@ -9,9 +9,9 @@
 
 use crate::helpmsg::{Help, Message};
 
-pub const NAME: &str = "MineFetch";
-pub const PROGRAM_VERSION: &str = "1.5.1";
-pub const USER_AGENT: &str = "KirillkoTankisto/minefetch/1.5.1 (kirsergeev@icloud.com)";
+pub const NAME: &'static str = "MineFetch";
+pub const PROGRAM_VERSION: &'static str = env!("CARGO_PKG_VERSION");
+pub const USER_AGENT: &'static str = concat!("KirillkoTankisto/minefetch/", env!("CARGO_PKG_VERSION"), " (kirsergeev@icloud.com)");
 pub const HELP_MESSAGE: Help = Help {
     header: "Commands:",
     program_name: "minefetch",

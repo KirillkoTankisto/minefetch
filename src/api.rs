@@ -23,19 +23,13 @@ use serde_json::{self, Value};
 pub async fn fetch_latest_version(
     modname: &String,
     client: &Client,
-    params: &[(String, String)],
+    params: &[(&str, &String)],
     profile: &Profile,
 ) -> Result<(String, String, Option<Vec<Dependency>>), Box<dyn std::error::Error + Send + Sync>> {
-    // Clone params to a new Vec
-    let params: Vec<(String, String)> = params
-        .iter()
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect();
-
     // Construct the URL with parameters.
     let url = reqwest::Url::parse_with_params(
         &format!("https://api.modrinth.com/v2/project/{}/version", modname),
-        &params,
+        params,
     )?;
 
     // Send the request.
@@ -92,14 +86,13 @@ pub async fn search_mods(
     query: &String,
     facets: Value,
     client: &Client,
-    fetch_params: &[(String, String)],
+    fetch_params: &[(&str, &String)],
     profile: &Profile,
 ) -> Result<Vec<(String, String, Option<Vec<Dependency>>)>, Box<dyn std::error::Error + Send + Sync>>
 {
-    let facets_string = facets.to_string();
-    let params = [("query", query.to_string()), ("facets", facets_string)];
-    let params: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
-    let url = reqwest::Url::parse_with_params("https://api.modrinth.com/v2/search", &params)?;
+    let facets_string = facets.as_str().unwrap();
+    let params:&[(&str, &str)]  = &[("query", query), ("facets", facets_string)];
+    let url = reqwest::Url::parse_with_params("https://api.modrinth.com/v2/search", params)?;
 
     let response = client
         .get(url)
@@ -132,10 +125,6 @@ pub async fn search_mods(
             } - 1,
         );
     }
-    let fetch_params: Vec<(String, String)> = fetch_params
-        .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
     let mut versions: Vec<(String, String, Option<Vec<Dependency>>)> = Vec::new();
     for number in numbers {
         let version: (String, String, Option<Vec<Dependency>>) = match parsed.hits.get(number) {
