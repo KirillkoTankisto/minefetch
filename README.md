@@ -134,13 +134,10 @@ To build MineFetch from source, ensure you have Git and Rustup installed then ru
 ```sh
 git clone https://github.com/KirillkoTankisto/minefetch.git
 cd minefetch
-./build-static
+./build
 ```
 The executable will be located in the `release` directory.
-
-> You need to have target named `x86_64-unknown-linux-musl` to compile static version.
-> If you want a dynamically linked binary then you need to replace last command with `./build`.
-> The executable will be located in `x86_64-unknown-linux-musl/release` directory
+> If your system is based on glibc and you want a static binary then you can run ./build-static. Ensure that you have a target named x86_64-unknown-linux-musl. The executable will be located in x86_64-unknown-linux-musl/release directory.
 
 ## Contact
 
