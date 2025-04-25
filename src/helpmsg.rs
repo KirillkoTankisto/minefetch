@@ -1,5 +1,5 @@
-use crate::async_println;
 use crate::MFText;
+use crate::async_println;
 
 pub struct Help {
     pub header: &'static str,

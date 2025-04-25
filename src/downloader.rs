@@ -9,7 +9,7 @@
 
 // Internal modules
 use crate::consts::USER_AGENT;
-use crate::{async_eprintln, async_println, get_dependencies, Dependency};
+use crate::{Dependency, async_eprintln, async_println, get_dependencies};
 
 // Standard imports
 use std::path::{Path, PathBuf};

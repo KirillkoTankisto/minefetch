@@ -91,7 +91,7 @@ pub async fn search_mods(
 ) -> Result<Vec<(String, String, Option<Vec<Dependency>>)>, Box<dyn std::error::Error + Send + Sync>>
 {
     let facets_string = facets.as_str().unwrap();
-    let params:&[(&str, &str)]  = &[("query", query), ("facets", facets_string)];
+    let params: &[(&str, &str)] = &[("query", query), ("facets", facets_string)];
     let url = reqwest::Url::parse_with_params("https://api.modrinth.com/v2/search", params)?;
 
     let response = client

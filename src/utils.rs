@@ -12,13 +12,13 @@ use std::path::PathBuf;
 use std::result::Result;
 
 // Internal modules
+use crate::Path;
 use crate::async_eprintln;
 use crate::coreutils::get_username;
-use crate::Path;
 
 // External crates
-use rand::distr::Alphanumeric;
 use rand::Rng;
+use rand::distr::Alphanumeric;
 use sha1::{Digest, Sha1};
 use tokio::fs::DirEntry;
 use tokio::io::{self, AsyncReadExt};

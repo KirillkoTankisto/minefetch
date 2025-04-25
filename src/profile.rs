@@ -19,7 +19,7 @@ use rfd::AsyncFileDialog;
 // Internal imports
 use crate::api::list_mods;
 use crate::async_println;
-use crate::mfio::{ainput, press_enter, select, MFText};
+use crate::mfio::{MFText, ainput, press_enter, select};
 use crate::structs::{Config, Locks, MFHashMap, Profile};
 use crate::utils::{generate_hash, get_confdir, get_confpath};
 
@@ -266,7 +266,7 @@ pub async fn get_locks(
     let string = match tokio::fs::read_to_string(locks_path).await {
         Ok(string) => string,
         Err(_) => {
-            return Err(format!("The profile {} doesn't have any locks yet", profile.name).into())
+            return Err(format!("The profile {} doesn't have any locks yet", profile.name).into());
         }
     };
     let locks: Locks = toml::from_str(&string)?;
