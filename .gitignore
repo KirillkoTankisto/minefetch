@@ -2,3 +2,4 @@ debug
 release
 .rustc_info.json
 target
+x86_64-unknown-linux-musl

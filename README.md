@@ -129,15 +129,18 @@ Download the latest version [here](https://github.com/KirillkoTankisto/minefetch
 
 ### Build from Source
 
-To build MineFetch from source, ensure you have Git, Rust, and Cargo installed, then run:
+To build MineFetch from source, ensure you have Git and Rustup installed then run:
 
 ```sh
 git clone https://github.com/KirillkoTankisto/minefetch.git
 cd minefetch
-./build
+./build-static
 ```
-
 The executable will be located in the `release` directory.
+
+> You need to have target named `x86_64-unknown-linux-musl` to compile static version.
+> If you want a dynamically linked binary then you need to replace last command with `./build`.
+> The executable will be located in `x86_64-unknown-linux-musl/release` directory
 
 ## Contact
 
