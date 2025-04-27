@@ -295,20 +295,27 @@ pub async fn add_lock(
     }
 
     let hash = select("Choose a mod to lock", locklist).await?;
-
     let profile = read_config().await?;
 
+    write_lock(&profile, hash).await?;
+    Ok(())
+}
+
+pub async fn write_lock(
+    profile: &Profile,
+    hash: String,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut locks = match get_locks(&profile).await {
         Ok(locks) => locks,
         Err(_) => Vec::new(),
     };
+
     locks.push(hash);
 
     let new_locks = Locks { lock: locks };
     let locks_path = get_lock_dir(&profile);
 
-    tokio::fs::write(locks_path, toml::to_string_pretty(&new_locks)?).await?;
-
+    tokio::fs::write(locks_path, toml::to_string(&new_locks)?).await?;
     Ok(())
 }
 
@@ -342,7 +349,7 @@ pub async fn remove_lock(
 
     let locks = Locks { lock: locks };
 
-    let locks_to_str = match toml::to_string_pretty(&locks) {
+    let locks_to_str = match toml::to_string(&locks) {
         Ok(locks) => locks,
         Err(error) => return Err(error.into()),
     };

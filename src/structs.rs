@@ -24,11 +24,12 @@ pub struct File {
     pub primary: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Version {
     pub name: String,
     pub files: Vec<File>,
     pub dependencies: Option<Vec<Dependency>>,
+    pub project_id: String,
 }
 
 pub type VersionsList = Vec<Version>;

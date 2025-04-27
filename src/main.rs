@@ -29,13 +29,13 @@ use api::*;
 use consts::*;
 use downloader::*;
 use helpmsg::display_help_msg;
-use mfio::MFText;
+use mfio::{MFText, select};
 use profile::{
     add_lock, create_profile, delete_all_profiles, delete_profile, list_locks, list_profiles,
     read_config, remove_lock, switch_profile,
 };
 use structs::*;
-use utils::get_jar_filename;
+use utils::{filename_from_url, get_jar_filename, remove_mods_by_hash};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -52,7 +52,7 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match args.get(1).map(String::as_str) {
         Some("add") => match args.get(2).map(String::as_str) {
             Some(modname) => {
-                async_println!(":out: Adding mod...").await;
+                async_println!(":out: Adding a mod...").await;
 
                 let profile: Profile = read_config().await?;
 
@@ -242,6 +242,109 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         Some("debug") => {
             println!(":dbg: {} {} {}", NAME, PROGRAM_VERSION, USER_AGENT);
+        }
+
+        Some("edit") => {
+            let client = Client::new();
+            let profile = read_config().await?;
+
+            let modlist = list_mods(&profile, &client).await?;
+            let mut menu: Vec<(String, Version)> = Vec::new();
+
+            for modification in modlist.1 {
+                menu.push((
+                    format!(
+                        "{} ({})",
+                        modification.1.name,
+                        modification
+                            .1
+                            .files
+                            .iter()
+                            .find(|file| file.primary)
+                            .unwrap()
+                            .filename
+                    ),
+                    modification.1,
+                ));
+            }
+
+            let mod_to_edit = select("Select a mod to edit", menu).await?;
+
+            let params = &[
+                ("loaders", &serde_json::to_string(&[&profile.loader])?),
+                (
+                    "game_versions",
+                    &serde_json::to_string(&[&profile.gameversion])?,
+                ),
+            ];
+
+            let url = reqwest::Url::parse_with_params(
+                format!(
+                    "https://api.modrinth.com/v2/project/{}/version",
+                    mod_to_edit.project_id
+                )
+                .as_str(),
+                params,
+            )?;
+
+            let response = client
+                .get(url)
+                .header("User-Agent", USER_AGENT)
+                .send()
+                .await?
+                .text()
+                .await?;
+
+            let parsed: VersionsList = serde_json::from_str(&response)?;
+
+            let mut versions_to_install: Vec<(String, String)> = Vec::new();
+
+            for version in parsed {
+                versions_to_install.push((
+                    version.name,
+                    version
+                        .files
+                        .iter()
+                        .find(|file| file.primary)
+                        .unwrap()
+                        .url
+                        .clone(),
+                ));
+            }
+
+            let version_to_install =
+                select("Choose a version to install", versions_to_install).await?;
+
+            let filename = filename_from_url(&version_to_install);
+
+            download_file(&profile.modsfolder, filename, &version_to_install, &client).await?;
+
+            async_println!(":out: Downloaded {filename}").await;
+
+            remove_mods_by_hash(
+                &profile.modsfolder,
+                &vec![
+                    &mod_to_edit
+                        .files
+                        .iter()
+                        .find(|file| file.primary)
+                        .unwrap()
+                        .hashes
+                        .sha1,
+                ],
+            )
+            .await?;
+
+            async_println!(
+                ":out: Deleted {}",
+                &mod_to_edit
+                    .files
+                    .iter()
+                    .find(|file| file.primary)
+                    .unwrap()
+                    .filename
+            )
+            .await
         }
 
         Some(_) => {

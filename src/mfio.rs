@@ -175,7 +175,10 @@ impl std::fmt::Display for MFText {
 const VIEWPORT_SIZE: usize = 7;
 
 /// A replacement for inquire. Works better
-pub async fn select(prompt: &str, options: Vec<(String, String)>) -> io::Result<String> {
+pub async fn select<T>(prompt: &str, options: Vec<(String, T)>) -> io::Result<T>
+where
+    T: Clone,
+{
     if options.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -187,9 +190,14 @@ pub async fn select(prompt: &str, options: Vec<(String, String)>) -> io::Result<
     let mut index = 0;
     let total = options.len();
 
-    async_println!(":out: {prompt}").await;
+    Term::hide_cursor(&term)?;
 
     loop {
+        term.clear_screen()?;
+        async_println!(":out: {prompt}").await;
+
+        let (_rows, columns) = term.size();
+
         let start = if total <= VIEWPORT_SIZE {
             0
         } else if index < VIEWPORT_SIZE / 2 {
@@ -202,6 +210,14 @@ pub async fn select(prompt: &str, options: Vec<(String, String)>) -> io::Result<
 
         let end = (start + VIEWPORT_SIZE).min(total);
         for (i, (label, _)) in options.iter().enumerate().skip(start).take(end - start) {
+            let max_width = columns as usize - 3;
+
+            let label = if label.len() > max_width {
+                &format!("{}...", label[0..max_width - 3].to_string())
+            } else {
+                label
+            };
+
             if i == index {
                 async_println!(">> {label}").await;
             } else {
@@ -214,10 +230,12 @@ pub async fn select(prompt: &str, options: Vec<(String, String)>) -> io::Result<
             Key::ArrowDown => index = (index + 1) % options.len(),
             Key::Enter => {
                 term.clear_last_lines(end - start)?;
-                return Ok(options[index].1.to_string());
+                Term::show_cursor(&term)?;
+                return Ok(options[index].1.clone());
             }
             Key::Escape | Key::Char('q') => {
                 term.clear_last_lines(end - start)?;
+                Term::show_cursor(&term)?;
                 return Err(io::Error::new(
                     io::ErrorKind::Interrupted,
                     "Selection cancelled",
