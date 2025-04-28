@@ -7,6 +7,7 @@
 
 */
 
+use reqwest::Client;
 // External crates
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -30,6 +31,7 @@ pub struct Version {
     pub files: Vec<File>,
     pub dependencies: Option<Vec<Dependency>>,
     pub project_id: String,
+    pub id: String,
 }
 
 pub type VersionsList = Vec<Version>;
@@ -91,4 +93,9 @@ pub struct Dependency {
 #[derive(Deserialize, Serialize)]
 pub struct Locks {
     pub lock: Vec<String>,
+}
+
+pub struct WorkingProfile {
+    pub profile: Profile,
+    pub client: Client,
 }

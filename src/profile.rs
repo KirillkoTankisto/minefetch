@@ -20,7 +20,7 @@ use rfd::AsyncFileDialog;
 use crate::api::list_mods;
 use crate::async_println;
 use crate::mfio::{MFText, ainput, press_enter, select};
-use crate::structs::{Config, Locks, MFHashMap, Profile};
+use crate::structs::{Config, Locks, MFHashMap, Profile, WorkingProfile};
 use crate::utils::{generate_hash, get_confdir, get_confpath};
 
 /// Returns single active Profile
@@ -277,10 +277,9 @@ pub async fn get_locks(
 }
 
 pub async fn add_lock(
-    profile: &Profile,
-    client: &Client,
+    working_profile: &WorkingProfile,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let (_, versions) = list_mods(profile, client).await?;
+    let (_, versions) = list_mods(&working_profile).await?;
     let mut locklist: Vec<(String, String)> = Vec::new();
 
     for i in versions {
@@ -320,12 +319,11 @@ pub async fn write_lock(
 }
 
 pub async fn remove_lock(
-    profile: &Profile,
-    client: &Client,
+    working_profile: &WorkingProfile,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut locks = get_locks(&profile).await?;
+    let mut locks = get_locks(&working_profile.profile).await?;
     let mut locklist: Vec<(String, String)> = Vec::new();
-    let (_, mods) = list_mods(&profile, &client).await?;
+    let (_, mods) = list_mods(&working_profile).await?;
     for lock in &locks {
         let (name, filename) = match mods.get_key_value(lock) {
             Some(value) => (
@@ -354,7 +352,7 @@ pub async fn remove_lock(
         Err(error) => return Err(error.into()),
     };
 
-    let lockspath = get_lock_dir(&profile);
+    let lockspath = get_lock_dir(&working_profile.profile);
 
     tokio::fs::write(lockspath, locks_to_str).await?;
 
@@ -376,11 +374,10 @@ pub fn get_lock_dir(profile: &Profile) -> PathBuf {
 }
 
 pub async fn list_locks(
-    client: &Client,
-    profile: &Profile,
+    working_profile: &WorkingProfile,
 ) -> Result<Vec<(usize, String, String)>, Box<dyn std::error::Error + Send + Sync>> {
-    let locks = get_locks(&profile).await?;
-    let (_, mods) = list_mods(&profile, &client).await?;
+    let locks = get_locks(&working_profile.profile).await?;
+    let (_, mods) = list_mods(&working_profile).await?;
     let mut counter: usize = 1;
     let mut result: Vec<(usize, String, String)> = Vec::new();
     for lock in locks {
@@ -401,4 +398,12 @@ pub async fn list_locks(
         counter += 1;
     }
     Ok(result)
+}
+
+pub async fn build_working_profile()
+-> Result<WorkingProfile, Box<dyn std::error::Error + Send + Sync>> {
+    let profile = read_config().await?;
+    let client = Client::new();
+    let working_profile = WorkingProfile { profile, client };
+    Ok(working_profile)
 }

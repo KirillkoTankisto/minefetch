@@ -91,7 +91,7 @@ pub async fn download_multiple_files(
             Some(dep) => {
                 let list = get_dependencies(&dep, &client).await?;
                 for dependency in list {
-                    async_println!(":deps: {} {}", dependency.0, dependency.1).await;
+                    async_println!(":dep: {} {}", dependency.0, dependency.1).await;
                 }
             }
             None => {}

@@ -12,7 +12,6 @@ use std::path::Path;
 use std::result::Result;
 
 // External crates
-use reqwest::Client;
 use serde_json::json;
 
 // Internal modules
@@ -29,13 +28,13 @@ use api::*;
 use consts::*;
 use downloader::*;
 use helpmsg::display_help_msg;
-use mfio::{MFText, select};
+use mfio::MFText;
 use profile::{
-    add_lock, create_profile, delete_all_profiles, delete_profile, list_locks, list_profiles,
-    read_config, remove_lock, switch_profile,
+    add_lock, build_working_profile, create_profile, delete_all_profiles, delete_profile,
+    list_locks, list_profiles, remove_lock, switch_profile,
 };
 use structs::*;
-use utils::{filename_from_url, get_jar_filename, remove_mods_by_hash};
+use utils::get_jar_filename;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -54,30 +53,27 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             Some(modname) => {
                 async_println!(":out: Adding a mod...").await;
 
-                let profile: Profile = read_config().await?;
-
-                let params = &[
-                    ("loaders", &serde_json::to_string(&[&profile.loader])?),
-                    (
-                        "game_versions",
-                        &serde_json::to_string(&[&profile.gameversion])?,
-                    ),
-                ];
-
-                let client = Client::new();
+                let working_profile = build_working_profile().await?;
 
                 let modversion =
-                    fetch_latest_version(&modname.to_string(), &client, params, &profile).await?;
+                    fetch_latest_version(&modname.to_string(), &working_profile).await?;
 
-                download_file(&profile.modsfolder, &modversion.0, &modversion.1, &client).await?;
+                download_file(
+                    &working_profile.profile.modsfolder,
+                    &modversion.0,
+                    &modversion.1,
+                    &working_profile.client,
+                )
+                .await?;
 
                 async_println!(":out: Downloaded {} ({})", &modname, &modversion.0).await;
 
                 match modversion.2 {
-                    Some(dep) => {
-                        let dependencies = get_dependencies(&dep, &client).await?;
+                    Some(dependencies) => {
+                        let dependencies =
+                            get_dependencies(&dependencies, &working_profile.client).await?;
                         for dependency in dependencies {
-                            async_println!(":deps: {} {}", dependency.0, dependency.1).await;
+                            async_println!(":dep: {} {}", dependency.0, dependency.1).await;
                         }
                     }
                     None => {}
@@ -111,59 +107,57 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             Some(_) => {
                 let query = args[2..].join(" ");
 
-                let profile: Profile = read_config().await?;
+                let working_profile = build_working_profile().await?;
 
-                let facets = json!([
-                    [format!("categories:{}", profile.loader)],
-                    [format!("versions:{}", profile.gameversion)],
-                    ["project_type:mod"],
-                ]);
+                let files = search_mods(&query, &working_profile).await?;
 
-                let params = &[
-                    ("loaders", &serde_json::to_string(&[&profile.loader])?),
-                    (
-                        "game_versions",
-                        &serde_json::to_string(&[&profile.gameversion])?,
-                    ),
-                ];
-
-                let client = Client::new();
-
-                let files = search_mods(&query, facets, &client, params, &profile).await?;
-
-                download_multiple_files(files, &profile.modsfolder, &client).await?;
+                download_multiple_files(
+                    files,
+                    &working_profile.profile.modsfolder,
+                    &working_profile.client,
+                )
+                .await?;
             }
 
             None => async_println!(":out: Usage: minefetch search <query>").await,
         },
 
         Some("upgrade") | Some("update") => {
-            let profile = read_config().await?;
-            let client = Client::new();
+            let working_profile = build_working_profile().await?;
 
-            let files = upgrade_mods(&profile, &client).await?;
+            let files = upgrade_mods(&working_profile).await?;
 
-            let client = Client::new();
+            if files.len() == 0 {
+                async_println!(":out: All mods are up to date!").await;
+                return Ok(())
+            }
 
-            download_multiple_files(files, &profile.modsfolder, &client).await?;
+            download_multiple_files(
+                files,
+                &working_profile.profile.modsfolder,
+                &working_profile.client,
+            )
+            .await?;
         }
 
         Some("list") => {
-            let profile: Profile = read_config().await?;
-            let client = Client::new();
+            let working_profile = build_working_profile().await?;
 
-            match list_mods(&profile, &client).await {
+            match list_mods(&working_profile).await {
                 Ok((size, versions)) => {
                     if size == 0 {
                         return Err("There are no mods yet".into());
                     }
+
                     async_println!(
                         ":out: There are \x1b[1;97m{}\x1b[0m mods in profile {}:",
                         size,
-                        profile.name
+                        working_profile.profile.name
                     )
                     .await;
+
                     let mut counter: usize = 1;
+
                     for (_, version) in versions {
                         async_println!(
                             "[{}{}{}] {}{}{} ({})",
@@ -182,14 +176,18 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 .filename
                         )
                         .await;
+
                         counter += 1
                     }
                 }
                 Err(error) => {
                     async_eprintln!(":err: {}", error).await;
-                    let path = Path::new(&profile.modsfolder);
+
+                    let path = Path::new(&working_profile.profile.modsfolder);
                     let mut entries = tokio::fs::read_dir(path).await?;
+
                     let mut counter: usize = 1;
+
                     while let Some(entry) = entries.next_entry().await? {
                         if let Some(path) = get_jar_filename(&entry).await {
                             async_println!("[{}] {}", counter, path).await;
@@ -202,21 +200,19 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         Some("lock") => match args.get(2).map(String::as_str) {
             Some("add") => {
-                let client = Client::new();
-                let profile = read_config().await?;
-                add_lock(&profile, &client).await?;
+                let working_profile = build_working_profile().await?;
+                add_lock(&working_profile).await?;
             }
 
             Some("remove") => {
-                let client = Client::new();
-                let profile = read_config().await?;
-                remove_lock(&profile, &client).await?;
+                let working_profile = build_working_profile().await?;
+                remove_lock(&working_profile).await?;
             }
 
             Some("list") => {
-                let client = Client::new();
-                let profile = read_config().await?;
-                let locks = list_locks(&client, &profile).await?;
+                let working_profile = build_working_profile().await?;
+                let locks = list_locks(&working_profile).await?;
+
                 for (size, name, filename) in locks {
                     async_println!(
                         "[{}{}{}] {}{}{} ({})",
@@ -241,110 +237,13 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
 
         Some("debug") => {
-            println!(":dbg: {} {} {}", NAME, PROGRAM_VERSION, USER_AGENT);
+            println!(":dbg: {} / {} / {}", NAME, PROGRAM_VERSION, USER_AGENT);
         }
 
         Some("edit") => {
-            let client = Client::new();
-            let profile = read_config().await?;
+            let working_profile = build_working_profile().await?;
 
-            let modlist = list_mods(&profile, &client).await?;
-            let mut menu: Vec<(String, Version)> = Vec::new();
-
-            for modification in modlist.1 {
-                menu.push((
-                    format!(
-                        "{} ({})",
-                        modification.1.name,
-                        modification
-                            .1
-                            .files
-                            .iter()
-                            .find(|file| file.primary)
-                            .unwrap()
-                            .filename
-                    ),
-                    modification.1,
-                ));
-            }
-
-            let mod_to_edit = select("Select a mod to edit", menu).await?;
-
-            let params = &[
-                ("loaders", &serde_json::to_string(&[&profile.loader])?),
-                (
-                    "game_versions",
-                    &serde_json::to_string(&[&profile.gameversion])?,
-                ),
-            ];
-
-            let url = reqwest::Url::parse_with_params(
-                format!(
-                    "https://api.modrinth.com/v2/project/{}/version",
-                    mod_to_edit.project_id
-                )
-                .as_str(),
-                params,
-            )?;
-
-            let response = client
-                .get(url)
-                .header("User-Agent", USER_AGENT)
-                .send()
-                .await?
-                .text()
-                .await?;
-
-            let parsed: VersionsList = serde_json::from_str(&response)?;
-
-            let mut versions_to_install: Vec<(String, String)> = Vec::new();
-
-            for version in parsed {
-                versions_to_install.push((
-                    version.name,
-                    version
-                        .files
-                        .iter()
-                        .find(|file| file.primary)
-                        .unwrap()
-                        .url
-                        .clone(),
-                ));
-            }
-
-            let version_to_install =
-                select("Choose a version to install", versions_to_install).await?;
-
-            let filename = filename_from_url(&version_to_install);
-
-            download_file(&profile.modsfolder, filename, &version_to_install, &client).await?;
-
-            async_println!(":out: Downloaded {filename}").await;
-
-            remove_mods_by_hash(
-                &profile.modsfolder,
-                &vec![
-                    &mod_to_edit
-                        .files
-                        .iter()
-                        .find(|file| file.primary)
-                        .unwrap()
-                        .hashes
-                        .sha1,
-                ],
-            )
-            .await?;
-
-            async_println!(
-                ":out: Deleted {}",
-                &mod_to_edit
-                    .files
-                    .iter()
-                    .find(|file| file.primary)
-                    .unwrap()
-                    .filename
-            )
-            .await
+            edit_mod(&working_profile).await?;
         }
 
         Some(_) => {

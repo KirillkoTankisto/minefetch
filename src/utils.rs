@@ -156,7 +156,3 @@ pub async fn get_confdir() -> Result<PathBuf, Box<dyn std::error::Error + Send +
     let homedir = get_homedir().await?;
     Ok(homedir.join(".config").join("minefetch"))
 }
-
-pub fn filename_from_url(url: &str) -> &str {
-    url.rsplit('/').next().unwrap_or(url)
-}
