@@ -105,6 +105,14 @@ Lock, unlock and list your locks with these commands:
   minefetch lock list
 ```
 
+### Edit mods
+
+Edit the mod:
+
+```sh
+  minefetch edit
+```
+
 ### Check MineFetch Version
 
 Display the current MineFetch version:
