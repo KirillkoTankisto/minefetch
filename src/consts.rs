@@ -7,15 +7,23 @@
 
 */
 
+// Import strctures from helpmsg
 use crate::helpmsg::{Help, Message};
 
+// Program name
 pub const NAME: &'static str = "MineFetch";
+
+// Program version
 pub const PROGRAM_VERSION: &'static str = env!("CARGO_PKG_VERSION");
+
+// User Agent which is used in all requests
 pub const USER_AGENT: &'static str = concat!(
     "KirillkoTankisto/minefetch/",
     env!("CARGO_PKG_VERSION"),
     " (kirsergeev@icloud.com)"
 );
+
+// Help message structure
 pub const HELP_MESSAGE: Help = Help {
     header: "Commands:",
     program_name: "minefetch",

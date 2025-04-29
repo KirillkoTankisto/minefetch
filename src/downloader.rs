@@ -19,29 +19,35 @@ use std::result::Result;
 use reqwest::Client;
 use tokio::io::AsyncWriteExt;
 
-/// Downloads single file
+/// Downloads a single file
 pub async fn download_file(
     path: &str,
     filename: &str,
     url: &str,
     client: &Client,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Create a destination directory if it doesn't exist
     tokio::fs::create_dir_all(path).await?;
 
+    // Create a file path
     let path = std::path::Path::new(path).join(&filename);
 
+    // Send the download request
     let mut response = client
         .get(url)
         .header("User-Agent", USER_AGENT)
         .send()
         .await?;
 
+    // Create a file
     let mut file = tokio::fs::File::create(path).await?;
 
+    // Write into file gradually
     while let Some(chunk) = response.chunk().await? {
         file.write(&chunk).await?;
     }
 
+    // Success
     Ok(())
 }
 
@@ -51,14 +57,22 @@ pub async fn download_multiple_files(
     path: &str,
     client: &Client,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Tasks' list
     let mut handles = Vec::new();
+
+    // Destination path
     let base_path = Path::new(path);
 
-    for (filename, url, deps) in files {
-        let client = client.clone();
+    // Going through all files that must be downloaded
+    for (filename, url, dependencies) in files {
+        // Copy the client
+        let client_download = client.clone();
+        let client_dependencies = client.clone();
 
+        // Get the path
         let sanitized_path = PathBuf::from(base_path);
 
+        // Check if this path safe (inside base_path)
         if !sanitized_path.starts_with(base_path) {
             async_eprintln!(
                 ":err: Potential path traversal attack detected: {:?}",
@@ -68,8 +82,12 @@ pub async fn download_multiple_files(
             continue;
         }
 
+        // Create a task
         let handle = tokio::spawn(async move {
+            // Print the text
             async_println!(":out: Downloading {}", &filename).await;
+
+            // Convert path to &str
             let path_str = match sanitized_path.to_str() {
                 Some(path) => path,
                 None => {
@@ -77,7 +95,9 @@ pub async fn download_multiple_files(
                     return; // Exit the task early
                 }
             };
-            match download_file(path_str, &filename, &url, &client).await {
+
+            // Download a file
+            match download_file(path_str, &filename, &url, &client_download).await {
                 Ok(_) => {}
                 Err(error) => {
                     async_eprintln!(":err: Failed to download {}: {}", filename, error).await
@@ -85,11 +105,13 @@ pub async fn download_multiple_files(
             }
         });
 
-        let client = Client::new();
-
-        match deps {
+        // Check if the mod has any dependencies
+        match dependencies {
             Some(dep) => {
-                let list = get_dependencies(&dep, &client).await?;
+                // Get a list of dependencies
+                let list = get_dependencies(&dep, &client_dependencies).await?;
+
+                // Print the list
                 for dependency in list {
                     async_println!(":dep: {} {}", dependency.0, dependency.1).await;
                 }
@@ -97,14 +119,17 @@ pub async fn download_multiple_files(
             None => {}
         }
 
+        // Append to the tasks' list
         handles.push(handle);
     }
 
+    // Execute the tasks
     for handle in handles {
         if let Err(error) = handle.await {
             async_eprintln!(":err: Task panicked: {:?}", error).await;
         }
     }
 
+    // Success
     Ok(())
 }

@@ -13,7 +13,7 @@ use crate::consts::USER_AGENT;
 use crate::downloader::download_file;
 use crate::json;
 use crate::mfio::{ainput, select};
-use crate::profile::{get_locks, remove_locked_ones};
+use crate::profile::{get_locks, remove_locked_ones, write_lock};
 use crate::structs::{
     Dependency, Hash, MFHashMap, Object2, Search, Version, VersionsList, WorkingProfile,
 };
@@ -455,57 +455,45 @@ pub async fn edit_mod(
         return Err("This mod is already installed".into());
     }
 
-    // Get the filename of selected mod version
-    let filename = &version_to_install
+    // Get the new mod's file info
+    let mod_file = version_to_install
         .files
         .iter()
         .find(|file| file.primary)
-        .unwrap()
-        .filename;
+        .unwrap();
 
     // Download the selected mod version
     download_file(
         &working_profile.profile.modsfolder,
-        filename,
-        &version_to_install
-            .files
-            .iter()
-            .find(|file| file.primary)
-            .unwrap()
-            .url,
+        &mod_file.filename,
+        &mod_file.url,
         &working_profile.client,
     )
     .await?;
 
     // Print the text
-    async_println!(":out: Downloaded {filename}").await;
+    async_println!(":out: Downloaded {}", &mod_file.filename).await;
+
+    // Get the old mod's file info
+    let old_mod_file = mod_to_edit.files.iter().find(|file| file.primary).unwrap();
 
     // Delete the old mod
     remove_mods_by_hash(
         &working_profile.profile.modsfolder,
-        &vec![
-            &mod_to_edit
-                .files
-                .iter()
-                .find(|file| file.primary)
-                .unwrap()
-                .hashes
-                .sha1,
-        ],
+        &vec![&old_mod_file.hashes.sha1],
     )
     .await?;
 
     // Print the text
-    async_println!(
-        ":out: Deleted {}",
-        &mod_to_edit
-            .files
-            .iter()
-            .find(|file| file.primary)
-            .unwrap()
-            .filename
-    )
-    .await;
+    async_println!(":out: Deleted {}", &old_mod_file.filename).await;
+
+    // Create a yes / no dialog (lock the mod or not)
+    let lock_menu: Vec<(String, bool)> = vec![("Yes".to_string(), true), ("No".to_string(), false)];
+
+    // If user chooses Yes then lock the mod
+    if select("Do you want to lock this mod?", lock_menu).await? {
+        write_lock(&working_profile.profile, mod_file.hashes.sha1.clone()).await?
+    }
 
     // Success
     Ok(())

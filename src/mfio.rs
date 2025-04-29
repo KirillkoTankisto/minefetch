@@ -16,19 +16,29 @@ use tokio::io::{self, AsyncBufReadExt, BufReader};
 macro_rules! async_println {
     ($($arg:tt)*) => {{
         async {
+            // Set the output to async stdout
             let mut stdout = tokio::io::BufWriter::new(tokio::io::stdout());
+
+            // Write the input into stdout
             if let Err(e) = tokio::io::AsyncWriteExt::write_all(
                 &mut stdout,
                 format!($($arg)*).as_bytes()
             ).await {
                 eprintln!("Error writing to stdout: {}", e);
             }
+
+            // Write newline into stdout
             if let Err(e) = tokio::io::AsyncWriteExt::write_all(
                 &mut stdout,
                 b"\n"
             ).await {
                 eprintln!("Error writing newline to stdout: {}", e);
             }
+
+            /*
+                Flush the text to make sure that
+                everything has been written into stdout
+            */
             if let Err(e) = tokio::io::AsyncWriteExt::flush(&mut stdout).await {
                 eprintln!("Error flushing stdout: {}", e);
             }
@@ -41,13 +51,23 @@ macro_rules! async_println {
 macro_rules! async_eprintln {
     ($($arg:tt)*) => {{
         async {
+            // Set the output to async stderr
             let mut stderr = tokio::io::BufWriter::new(tokio::io::stderr());
+
+            // Write the input into the stderr
             if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut stderr, format!($($arg)*).as_bytes()).await {
                 eprintln!(":err: Error writing to stderr: {}", e);
             }
+
+            // Write newline into the stderr
             if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut stderr, b"\n").await {
                 eprintln!(":err: Error writing newline to stderr: {}", e);
             }
+
+            /*
+                Flush the text to make sure that
+                everything has been written into stderr
+            */
             if let Err(e) = tokio::io::AsyncWriteExt::flush(&mut stderr).await {
                 eprintln!(":err: Error flushing stderr: {}", e);
             }
@@ -60,13 +80,21 @@ macro_rules! async_eprintln {
 macro_rules! async_print {
     ($($arg:tt)*) => {{
         async {
+            // Set the output to async stdout
             let mut stdout = tokio::io::BufWriter::new(tokio::io::stdout());
+
+            // Write the input into stdout
             if let Err(e) = tokio::io::AsyncWriteExt::write_all(
                 &mut stdout,
                 format!($($arg)*).as_bytes()
             ).await {
                 eprintln!(":err: Error writing to stdout: {}", e);
             }
+
+            /*
+                Flush the text to make sure that
+                everything has been written into stdout
+            */
             if let Err(e) = tokio::io::AsyncWriteExt::flush(&mut stdout).await {
                 eprintln!(":err: Error flushing stdout: {}", e);
             }
@@ -76,29 +104,46 @@ macro_rules! async_print {
 
 /// Press enter to continue functionality
 pub async fn press_enter() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Set the stdout (output)
     let term = Term::stdout();
 
+    // The start of the loop
     loop {
+        // Read a key
         let key = term.read_key()?;
 
+        // Check which key is pressed
         match key {
+            // If user pressed 'enter' then stop
             Key::Enter => break,
+
+            // If user pressed 'q' then stop with the error
             Key::Char('q') => return Err("The operation has been cancelled".into()),
+
+            // If user pressed something else then continue
             _ => (),
         }
     }
 
+    // Success
     Ok(())
 }
 
 /// Reads user input and returns a String
 pub async fn ainput(prompt: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    // Create a buffer
     let mut buffer = String::new();
+
+    // Create a reader
     let mut reader = BufReader::new(tokio::io::stdin());
 
+    // Print the prompt
     async_print!("{}", prompt).await;
+
+    // Read the user input
     reader.read_line(&mut buffer).await?;
 
+    // Return the reformatted input
     Ok(buffer.trim().to_string())
 }
 
@@ -133,6 +178,7 @@ pub enum MFText {
     Reset,
 }
 
+/// Formatting for MFText
 impl MFText {
     pub fn code(&self) -> &'static str {
         match self {
@@ -165,19 +211,17 @@ impl MFText {
     }
 }
 
+/// Display for MFText
 impl std::fmt::Display for MFText {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.code())
     }
 }
 
-/// Size of view in select menu
-const VIEWPORT_SIZE: usize = 7;
-
 /// A replacement for inquire. Works better
 pub async fn select<T>(prompt: &str, options: Vec<(String, T)>) -> io::Result<T>
 where
-    T: Clone,
+    T: Clone, // Makes function take any type of value which implements 'Clone' as an input
 {
     if options.is_empty() {
         return Err(io::Error::new(
@@ -193,22 +237,24 @@ where
     Term::hide_cursor(&term)?;
 
     loop {
+        // Get terminal size a the moment
+        let (rows, columns) = term.size();
+
+        let (viewport_size, columns) = (rows as usize - 2, columns as usize);
         term.clear_screen()?;
         async_println!(":out: {prompt}").await;
 
-        let (_rows, columns) = term.size();
-
-        let start = if total <= VIEWPORT_SIZE {
+        let start = if total <= viewport_size {
             0
-        } else if index < VIEWPORT_SIZE / 2 {
+        } else if index < viewport_size / 2 {
             0
-        } else if index > total - (VIEWPORT_SIZE / 2 + 1) {
-            total - VIEWPORT_SIZE
+        } else if index > total - (viewport_size / 2 + 1) {
+            total - viewport_size
         } else {
-            index - VIEWPORT_SIZE / 2
+            index - viewport_size / 2
         };
 
-        let end = (start + VIEWPORT_SIZE).min(total);
+        let end = (start + viewport_size).min(total);
         for (i, (label, _)) in options.iter().enumerate().skip(start).take(end - start) {
             let max_width = columns as usize - 3;
 
