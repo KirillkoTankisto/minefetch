@@ -15,7 +15,7 @@ use crate::json;
 use crate::mfio::{ainput, select};
 use crate::profile::{get_locks, remove_locked_ones, write_lock};
 use crate::structs::{
-    Dependency, Hash, MFHashMap, Object2, Search, Version, VersionsList, WorkingProfile,
+    Dependency, Hash, MFHashMap, Project, Search, Version, VersionsList, WorkingProfile,
 };
 use crate::utils::{get_hashes, remove_mods_by_hash};
 
@@ -351,7 +351,7 @@ pub async fn get_dependencies(
             .await?;
 
         // Parse the response (extracts the project name)
-        let parsed: Object2 = serde_json::from_str(&response)?;
+        let parsed: Project = serde_json::from_str(&response)?;
 
         // Push the name and dependency type into the list
         dependency_list.push((parsed.title, dependency.dependency_type.clone()))

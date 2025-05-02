@@ -1,0 +1,1 @@
+cargo build -Z build-std --target riscv64gc-unknown-linux-gnu --target-dir . --release

@@ -132,9 +132,9 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // minefetch search %query%
         Some("search") => match args.get(2) {
             /*
-            Doesn't use the value from args because
-            program joins all the strings starting
-            from the third argument
+                Doesn't use the value from args because
+                the program joins all the strings starting
+                from the third argument
             */
             Some(_) => {
                 // Join all the strings to form a query
