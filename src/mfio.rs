@@ -242,7 +242,7 @@ where
 
         let (viewport_size, columns) = (rows as usize - 2, columns as usize);
         term.clear_screen()?;
-        async_println!(":out: {prompt}").await;
+        println!(":out: {prompt}");
 
         let start = if total <= viewport_size {
             0
@@ -265,9 +265,9 @@ where
             };
 
             if i == index {
-                async_println!(">> {label}").await;
+                println!(">> {label}")
             } else {
-                async_println!("   {label}").await;
+                println!("   {label}");
             }
         }
 

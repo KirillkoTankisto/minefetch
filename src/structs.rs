@@ -89,10 +89,12 @@ pub struct Object {
 }
 
 /// Project structure
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Project {
     pub title: String,
 }
+
+pub type ProjectList = Vec<Project>;
 
 /// Hash structure
 /// (hashes, algorithm, loaders, game versions)

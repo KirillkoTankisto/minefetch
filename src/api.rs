@@ -15,7 +15,8 @@ use crate::json;
 use crate::mfio::{ainput, select};
 use crate::profile::{get_locks, remove_locked_ones, write_lock};
 use crate::structs::{
-    Dependency, Hash, MFHashMap, Project, Search, Version, VersionsList, WorkingProfile,
+    Dependency, Hash, MFHashMap, Project, ProjectList, Search, Version, VersionsList,
+    WorkingProfile,
 };
 use crate::utils::{get_hashes, remove_mods_by_hash};
 
@@ -104,6 +105,16 @@ pub async fn search_mods(
     working_profile: &WorkingProfile,
 ) -> Result<Vec<(String, String, Option<Vec<Dependency>>)>, Box<dyn std::error::Error + Send + Sync>>
 {
+    /*
+    Get the current mods' list to compare with
+    versions that user will try to install. It's needed to
+    ensure that there won't be any duplicates of mods
+    */
+    let mod_list = match list_mods(&working_profile).await {
+        Ok(list) => list,
+        Err(_) => (0, MFHashMap::new()),
+    };
+
     // Set facets
     let facets = json!([
         [format!("categories:{}", working_profile.profile.loader)],
@@ -112,7 +123,10 @@ pub async fn search_mods(
     ]);
 
     // Set parameters
-    let params: &[(&str, String)] = &[("query", query.to_string()), ("facets", facets.to_string())];
+    let params: &[(&str, &String)] = &[
+        ("query", &query.to_string()),
+        ("facets", &facets.to_string()),
+    ];
 
     // Parse the URL
     let url = reqwest::Url::parse_with_params("https://api.modrinth.com/v2/search", params)?;
@@ -159,19 +173,165 @@ pub async fn search_mods(
         );
     }
 
-    // Create a version list
-    let mut versions: Vec<(String, String, Option<Vec<Dependency>>)> = Vec::new();
+    // Set the counter
+    let mut counter: usize = 1;
 
-    // Fill up the version list
-    for number in numbers {
-        let version: (String, String, Option<Vec<Dependency>>) = match parsed.hits.get(number) {
-            Some(object) => fetch_latest_version(&object.project_id, working_profile).await?, // Get a mod
-            None => return Err("Cannot get such mod".into()), // The number is out of range
+    // Print the options
+    for number in &numbers {
+        // Get a git by its number in the list
+        match parsed.hits.get(*number) {
+            // If it's in the range
+            Some(version) => {
+                // If there're mods installed in the profile
+                if mod_list.0 != 0 {
+                    for hashmap in &mod_list.1 {
+                        if hashmap.1.project_id == version.project_id {
+                            return Err(
+                                format!("The mod {} is already installed", version.title).into()
+                            );
+                        }
+                    }
+                }
+                async_println!("[{}] {}", counter, version.title).await;
+                counter += 1;
+            }
+            None => return Err("Cannot get such mod".into()),
         };
-        versions.push(version); // Push a version into the list
     }
 
-    // Return a version list
+    let nums_string = ainput(":out: Select mods to edit: ").await?;
+    let nums_string = nums_string.split(' ');
+
+    let list: Vec<&str> = nums_string.clone().collect::<Vec<&str>>();
+
+    let mut versions: Vec<(String, String, Option<Vec<Dependency>>)> = Vec::new();
+
+    if !list.is_empty() {
+        let mut nums: Vec<usize> = Vec::new();
+
+        for object in nums_string {
+            nums.push(
+                match object.parse::<usize>() {
+                    Ok(number) => number,
+                    Err(_) => return Err("Failed to parse arguments".into()),
+                } - 1,
+            );
+        }
+
+        // Validate nums are within the selected mods range
+        for num in &nums {
+            if *num >= numbers.len() {
+                return Err("Invalid mod selection".into());
+            }
+        }
+
+        // Collect project IDs from the selected mods (using original hit indices)
+        let mut projects: Vec<String> = Vec::new();
+        for num in &nums {
+            let hit_index = numbers[*num]; // Get the original hit index from numbers
+            match parsed.hits.get(hit_index) {
+                Some(hit) => {
+                    projects.push(hit.project_id.clone());
+                }
+                None => return Err("Cannot get such mod".into()),
+            }
+        }
+
+        // Set the parameters for the URL
+        let params = &[
+            (
+                "loaders",
+                &serde_json::to_string(&[&working_profile.profile.loader])?,
+            ),
+            (
+                "game_versions",
+                &serde_json::to_string(&[&working_profile.profile.gameversion])?,
+            ),
+        ];
+
+        let these_versions = list_versions(working_profile, projects.clone(), params).await?;
+
+        let version_names = get_project_name(
+            &working_profile.client,
+            these_versions.iter().map(|(id, _)| id).collect(),
+        )
+        .await?;
+
+        let version_complex: Vec<(String, Vec<Version>, Project)> = these_versions
+            .into_iter()
+            .zip(version_names.into_iter())
+            .map(|((project_id, versions), project)| (project_id, versions, project))
+            .collect();
+
+        // Store selected versions for edited projects
+        let mut selected_versions: MFHashMap = MFHashMap::new();
+
+        for (project_id, versions_list, project) in version_complex {
+            let versions_menu: Vec<(String, Version)> = versions_list
+                .iter()
+                .map(|version| (version.name.clone(), version.clone()))
+                .collect();
+            let selected = select(
+                &format!("Select a version for {}", project.title),
+                versions_menu,
+            )
+            .await?;
+
+            // Create a yes / no dialog (lock the mod or not)
+            let lock_menu: Vec<(String, bool)> =
+                vec![("Yes".to_string(), true), ("No".to_string(), false)];
+
+            // If user chooses Yes then lock the mod
+            if select("Do you want to lock this mod?", lock_menu).await? {
+                write_lock(
+                    &working_profile.profile,
+                    selected
+                        .files
+                        .iter()
+                        .find(|file| file.primary)
+                        .unwrap()
+                        .hashes
+                        .sha1
+                        .clone(),
+                )
+                .await?
+            }
+
+            selected_versions.insert(project_id, selected);
+        }
+
+        // Create a version list using selected or latest versions
+        for number in numbers {
+            let hit = parsed.hits.get(number).ok_or("Cannot get such mod")?;
+            let project_id = &hit.project_id;
+
+            if let Some(selected_version) = selected_versions.get(project_id) {
+                // Use the user-selected version
+                let file = selected_version
+                    .files
+                    .iter()
+                    .find(|file| file.primary)
+                    .unwrap();
+
+                let (filename, url) = (file.filename.clone(), file.url.clone());
+
+                versions.push((filename, url, selected_version.dependencies.clone()));
+            } else {
+                // Fetch latest version if not edited
+                let version = fetch_latest_version(project_id, working_profile).await?;
+                versions.push(version);
+            }
+        }
+    } else {
+        for number in numbers {
+            let version: (String, String, Option<Vec<Dependency>>) = match parsed.hits.get(number) {
+                Some(object) => fetch_latest_version(&object.project_id, working_profile).await?, // Get a mod
+                None => return Err("Cannot get such mod".into()), // The number is out of range
+            };
+            versions.push(version);
+        }
+    }
+
     Ok(versions)
 }
 
@@ -361,6 +521,79 @@ pub async fn get_dependencies(
     Ok(dependency_list)
 }
 
+pub async fn get_project_name(
+    client: &Client,
+    project_id: Vec<&String>,
+) -> Result<ProjectList, Box<dyn std::error::Error + Send + Sync>> {
+    // Join all IDs into a comma-separated string
+    let ids = json!(project_id);
+
+    // Create a single ("ids", "value1,value2,...") tuple
+    let params = &[("ids", ids.to_string())];
+
+    let url = reqwest::Url::parse_with_params("https://api.modrinth.com/v2/projects", params)?;
+    let response = client
+        .get(url)
+        .header("User-Agent", USER_AGENT)
+        .send()
+        .await?
+        .text()
+        .await?;
+    let parsed: ProjectList = serde_json::from_str(&response)?;
+
+    Ok(parsed)
+}
+
+pub async fn list_versions(
+    working_profile: &WorkingProfile,
+    projects: Vec<String>,
+    params: &[(&str, &String)],
+) -> Result<Vec<(String, VersionsList)>, Box<dyn std::error::Error + Send + Sync>> {
+    let mut tasks = Vec::new();
+
+    // Spawn tasks for each project
+    for project in projects {
+        let client = working_profile.client.clone();
+        let url = reqwest::Url::parse_with_params(
+            &format!("https://api.modrinth.com/v2/project/{}/version", &project),
+            params,
+        )?;
+
+        let this_task = tokio::spawn(async move {
+            let response = client
+                .get(url)
+                .header("User-Agent", USER_AGENT)
+                .send()
+                .await?
+                .text()
+                .await?;
+
+            let parsed: VersionsList = serde_json::from_str(&response)?;
+            Ok((project, parsed))
+        });
+
+        tasks.push(this_task);
+    }
+
+    // Await all tasks and handle two error layers
+    let task_results: Vec<Result<(String, VersionsList), _>> = futures::future::join_all(tasks)
+        .await
+        .into_iter()
+        .map(|res| {
+            // Convert JoinError to our error type
+            res.map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+                // Flatten nested Result<Result<T, E1>, E2>
+                .and_then(|inner| inner)
+        })
+        .collect();
+
+    // Convert Vec<Result> to Result<Vec>
+    let versions: Vec<(String, VersionsList)> =
+        task_results.into_iter().collect::<Result<_, _>>()?;
+
+    Ok(versions)
+}
+
 /// Edits a mod
 pub async fn edit_mod(
     working_profile: &WorkingProfile,
@@ -406,28 +639,12 @@ pub async fn edit_mod(
         ),
     ];
 
-    // Create a URL which includes the parameters above
-    let url = reqwest::Url::parse_with_params(
-        format!(
-            "https://api.modrinth.com/v2/project/{}/version",
-            mod_to_edit.project_id
-        )
-        .as_str(),
-        params,
-    )?;
-
-    // Send the request
-    let response = working_profile
-        .client
-        .get(url)
-        .header("User-Agent", USER_AGENT)
-        .send()
-        .await?
-        .text()
-        .await?;
-
     // Parse the response
-    let parsed: VersionsList = serde_json::from_str(&response)?;
+    let parsed = list_versions(working_profile, vec![mod_to_edit.project_id], params)
+        .await?
+        .get(0)
+        .unwrap()
+        .clone();
 
     /*
         Create a list of available versions.
@@ -436,7 +653,7 @@ pub async fn edit_mod(
     let mut versions_to_install: Vec<(String, &Version)> = Vec::new();
 
     // Fill the list with all available versions
-    for version in &parsed {
+    for version in &parsed.1 {
         let version_name = if version.id == mod_to_edit.id {
             &format!("{} (Installed)", version.name) // If mod is installed
         } else {
