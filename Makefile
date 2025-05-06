@@ -1,3 +1,5 @@
+PKGVER = 1.6.2
+
 all: x86_64 aarch64 riscv64gc clean package
 
 x86_64:
@@ -12,8 +14,8 @@ clean:
 
 package:
 	
-	cd x86_64-unknown-linux-musl/release/ && tar czf minefetch-x86_64-unknown-linux-musl.tar.gz minefetch && mv minefetch-x86_64-unknown-linux-musl.tar.gz ../../build-cross/
+	cd x86_64-unknown-linux-musl/release/ && tar czf minefetch-${PKGVER}-x86_64-unknown-linux-musl.tar.gz minefetch && mv minefetch-${PKGVER}-x86_64-unknown-linux-musl.tar.gz ../../build-cross/
 
-	cd aarch64-unknown-linux-musl/release/ && tar czf minefetch-aarch64-unknown-linux-musl.tar.gz minefetch && mv minefetch-aarch64-unknown-linux-musl.tar.gz ../../build-cross/
+	cd aarch64-unknown-linux-musl/release/ && tar czf minefetch-${PKGVER}-aarch64-unknown-linux-musl.tar.gz minefetch && mv minefetch-${PKGVER}-aarch64-unknown-linux-musl.tar.gz ../../build-cross/
 
-	cd riscv64gc-unknown-linux-musl/release/ && tar czf minefetch-riscv64gc-unknown-linux-musl.tar.gz minefetch && mv minefetch-riscv64gc-unknown-linux-musl.tar.gz ../../build-cross/
+	cd riscv64gc-unknown-linux-musl/release/ && tar czf minefetch-${PKGVER}-riscv64gc-unknown-linux-musl.tar.gz minefetch && mv minefetch-${PKGVER}-riscv64gc-unknown-linux-musl.tar.gz ../../build-cross/
