@@ -32,11 +32,11 @@ pub async fn fetch_latest_version(
     let params = &[
         (
             "loaders",
-            &working_profile.profile.loader,
+            &serde_json::to_string(&[&working_profile.profile.loader])?,
         ),
         (
             "game_versions",
-            &working_profile.profile.gameversion,
+            &serde_json::to_string(&[&working_profile.profile.gameversion])?,
         ),
     ];
 
@@ -101,7 +101,7 @@ pub async fn fetch_latest_version(
 
 /// Mod search
 pub async fn search_mods(
-    query: &String,
+    query: &str,
     working_profile: &WorkingProfile,
 ) -> Result<Vec<(String, String, Option<Vec<Dependency>>)>, Box<dyn std::error::Error + Send + Sync>>
 {
@@ -123,10 +123,7 @@ pub async fn search_mods(
     ]);
 
     // Set parameters
-    let params: &[(&str, &String)] = &[
-        ("query", &query.to_string()),
-        ("facets", &facets.to_string()),
-    ];
+    let params: &[(&str, &str)] = &[("query", &query), ("facets", &facets.to_string())];
 
     // Parse the URL
     let url = reqwest::Url::parse_with_params("https://api.modrinth.com/v2/search", params)?;
@@ -188,8 +185,17 @@ pub async fn search_mods(
         };
     }
 
+    /*
+        Ask user to type out the numbers of
+        the mods they want to edit
+    */
+
     let nums_string = ainput(":out: Select mods to edit: ").await?;
 
+    /*
+        Transform the string into the list of
+        integers and create an empty one if there's error
+    */
     let nums = match parse_to_int(nums_string) {
         Ok(nums) => nums,
         Err(_) => Vec::new(),
@@ -221,15 +227,15 @@ pub async fn search_mods(
         let params = &[
             (
                 "loaders",
-                &working_profile.profile.loader,
+                &serde_json::to_string(&[&working_profile.profile.loader])?,
             ),
             (
                 "game_versions",
-                &working_profile.profile.gameversion,
+                &serde_json::to_string(&[&working_profile.profile.gameversion])?,
             ),
         ];
 
-        let these_versions = list_versions(working_profile, projects.clone(), params).await?;
+        let these_versions = list_versions(working_profile, projects, params).await?;
 
         let version_names = get_project_name(
             &working_profile.client,
@@ -247,9 +253,9 @@ pub async fn search_mods(
         let mut selected_versions: MFHashMap = MFHashMap::new();
 
         for (project_id, versions_list, project) in version_complex {
-            let versions_menu: Vec<(String, Version)> = versions_list
+            let versions_menu: Vec<(&String, &Version)> = versions_list
                 .iter()
-                .map(|version| (version.name.clone(), version.clone()))
+                .map(|version| (&version.name, version))
                 .collect();
             let selected = select(
                 &format!("Select a version for {}", project.title),
@@ -258,8 +264,7 @@ pub async fn search_mods(
             .await?;
 
             // Create a yes / no dialog (lock the mod or not)
-            let lock_menu: Vec<(String, bool)> =
-                vec![("Yes".to_string(), true), ("No".to_string(), false)];
+            let lock_menu = vec![("Yes".to_string(), true), ("No".to_string(), false)];
 
             // If user chooses Yes then lock the mod
             if select("Do you want to lock this mod?", lock_menu).await? {
@@ -277,12 +282,12 @@ pub async fn search_mods(
                 .await?
             }
 
-            selected_versions.insert(project_id, selected);
+            selected_versions.insert(project_id, selected.clone());
         }
 
         // Create a version list using selected or latest versions
         for number in numbers {
-            let hit = parsed.hits.get(number - 1).ok_or("Cannot get such mod")?;
+            let hit = parsed.hits.get(number).ok_or("Cannot get such mod")?;
             let project_id = &hit.project_id;
 
             if let Some(selected_version) = selected_versions.get(project_id) {
@@ -304,10 +309,7 @@ pub async fn search_mods(
         }
     } else {
         for number in numbers {
-            let version: (String, String, Option<Vec<Dependency>>) = match parsed
-                .hits
-                .get(number - 1)
-            {
+            let version: (String, String, Option<Vec<Dependency>>) = match parsed.hits.get(number) {
                 Some(object) => fetch_latest_version(&object.project_id, working_profile).await?, // Get a mod
                 None => return Err("Cannot get such mod".into()), // The number is out of range
             };
@@ -614,11 +616,11 @@ pub async fn edit_mod(
     let params = &[
         (
             "loaders",
-            &working_profile.profile.loader,
+            &serde_json::to_string(&[&working_profile.profile.loader])?,
         ),
         (
             "game_versions",
-            &working_profile.profile.gameversion,
+            &serde_json::to_string(&[&working_profile.profile.gameversion])?,
         ),
     ];
 
@@ -688,7 +690,7 @@ pub async fn edit_mod(
     async_println!(":out: Deleted {}", &old_mod_file.filename).await;
 
     // Create a yes / no dialog (lock the mod or not)
-    let lock_menu: Vec<(String, bool)> = vec![("Yes".to_string(), true), ("No".to_string(), false)];
+    let lock_menu = vec![("Yes".to_string(), true), ("No".to_string(), false)];
 
     // If user chooses Yes then lock the mod
     if select("Do you want to lock this mod?", lock_menu).await? {

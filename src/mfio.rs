@@ -148,15 +148,22 @@ pub async fn ainput(prompt: &str) -> Result<String, Box<dyn std::error::Error + 
 }
 
 /// Parses String to Vec<usize>
-pub fn parse_to_int(string: String) -> Result<Vec<usize>, Box<dyn std::error::Error + Send + Sync>> {
+pub fn parse_to_int(
+    string: String,
+) -> Result<Vec<usize>, Box<dyn std::error::Error + Send + Sync>> {
+    // Split the string
     let splitted_string = string.split(' ');
-    let mut numbers: Vec<usize> = Vec::new();
-    for character in splitted_string {
-        numbers.push(match character.parse::<usize>() {
-            Ok(number) => number - 1,
-            Err(_) => return Err("Failed to parse arguments".into())
-        });
-    };
+
+    // Create a numbers list
+    let numbers: Vec<usize> = splitted_string
+        .into_iter()
+        .map(|character| {
+            character
+                .parse::<usize>()
+                .expect("Failed to parse arguments".into())
+        })
+        .collect();
+
     Ok(numbers)
 }
 
@@ -232,8 +239,9 @@ impl std::fmt::Display for MFText {
 }
 
 /// A replacement for inquire. Works better
-pub async fn select<T>(prompt: &str, options: Vec<(String, T)>) -> io::Result<T>
+pub async fn select<S, T>(prompt: &str, options: Vec<(S, T)>) -> io::Result<T>
 where
+    S: AsRef<str>,
     T: Clone, // Makes function take any type of value which implements 'Clone' as an input
 {
     if options.is_empty() {
@@ -271,17 +279,15 @@ where
         for (i, (label, _)) in options.iter().enumerate().skip(start).take(end - start) {
             let max_width = columns as usize - 3;
 
-            let label = if label.len() > max_width {
-                &format!("{}...", label[0..max_width - 3].to_string())
+            let raw_string = label.as_ref();
+
+            let display = if raw_string.len() > max_width {
+                format!("{}...", &raw_string[..max_width.saturating_sub(3)])
             } else {
-                label
+                raw_string.to_string()
             };
 
-            if i == index {
-                println!(">> {label}")
-            } else {
-                println!("   {label}");
-            }
+            println!("{}{}", if i == index { ">> " } else { "   " }, display);
         }
 
         match term.read_key()? {

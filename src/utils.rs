@@ -59,13 +59,13 @@ pub async fn get_hashes(
     while let Some(entry) = entries.next_entry().await? {
         // Get a path to the file / folder
         let path = entry.path();
-        
+
         // If it's a file
         if path.is_file() {
             // Add a task
-            tasks.push(tokio::task::spawn(async move {
-                calculate_sha1(&path).await
-            }));
+            tasks.push(tokio::task::spawn(
+                async move { calculate_sha1(&path).await },
+            ));
         }
     }
 
@@ -93,7 +93,7 @@ pub async fn get_hashes(
 pub async fn calculate_sha1<P: AsRef<Path>>(path: P) -> io::Result<String> {
     // Open the file
     let mut file = tokio::fs::File::open(&path).await?;
-    
+
     // Create a hasher
     let mut hasher = Sha1::new();
 
@@ -138,7 +138,7 @@ pub async fn remove_mods_by_hash(
         if path.is_file() {
             // Get a hash
             let file_hash = calculate_sha1(&path).await?;
-            
+
             // If the hash in the hash list then remove a file
             if hashes_to_remove.contains(&&file_hash) {
                 tokio::fs::remove_file(&path).await?;
@@ -196,7 +196,7 @@ pub async fn get_confpath() -> Result<PathBuf, Box<dyn std::error::Error + Send 
 
     /*
         Join the home folder with
-        the config location and return 
+        the config location and return
     */
     Ok(homedir
         .join(".config")
@@ -211,7 +211,7 @@ pub async fn get_confdir() -> Result<PathBuf, Box<dyn std::error::Error + Send +
 
     /*
         Join the home folder with the
-        config folder location and return 
+        config folder location and return
     */
     Ok(homedir.join(".config").join("minefetch"))
 }

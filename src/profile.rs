@@ -95,11 +95,11 @@ pub async fn create_profile() -> Result<(), Box<dyn std::error::Error + Send + S
     let gameversion = ainput(":out: Type a Minecraft version: ").await?;
 
     // A list of loaders
-    let loaders: Vec<(String, String)> = vec![
-        ("Quilt".to_string(), "quilt".to_string()),
-        ("Fabric".to_string(), "fabric".to_string()),
-        ("Forge".to_string(), "forge".to_string()),
-        ("NeoForge".to_string(), "neoforge".to_string()),
+    let loaders: Vec<(&str, &str)> = vec![
+        ("Quilt", "quilt"),
+        ("Fabric", "fabric"),
+        ("Forge", "forge"),
+        ("NeoForge", "neoforge"),
     ];
 
     // Ask user to select a loader
@@ -120,7 +120,7 @@ pub async fn create_profile() -> Result<(), Box<dyn std::error::Error + Send + S
         name,
         modsfolder,
         gameversion,
-        loader,
+        loader: loader.to_string(),
         hash: generate_hash().await?,
     };
 
@@ -162,10 +162,10 @@ pub async fn delete_profile() -> Result<(), Box<dyn std::error::Error + Send + S
     };
 
     // Create a profile menu
-    let profiles: Vec<(String, String)> = config
+    let profiles: Vec<(&str, String)> = config
         .profile
         .iter()
-        .map(|profile| (profile.name.clone(), profile.hash.clone()))
+        .map(|profile| (profile.name.as_str(), profile.hash.clone()))
         .collect();
 
     // If there's no profiles
@@ -261,7 +261,7 @@ pub async fn switch_profile() -> Result<(), Box<dyn std::error::Error + Send + S
 
     // Set a selected profile to active and others to inactive
     for profile in config.profile.iter_mut() {
-        if profile.hash == selected_hash {
+        if profile.hash == *selected_hash {
             profile.active = true
         } else {
             profile.active = false;
