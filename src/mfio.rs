@@ -147,6 +147,19 @@ pub async fn ainput(prompt: &str) -> Result<String, Box<dyn std::error::Error + 
     Ok(buffer.trim().to_string())
 }
 
+/// Parses String to Vec<usize>
+pub fn parse_to_int(string: String) -> Result<Vec<usize>, Box<dyn std::error::Error + Send + Sync>> {
+    let splitted_string = string.split(' ');
+    let mut numbers: Vec<usize> = Vec::new();
+    for character in splitted_string {
+        numbers.push(match character.parse::<usize>() {
+            Ok(number) => number - 1,
+            Err(_) => return Err("Failed to parse arguments".into())
+        });
+    };
+    Ok(numbers)
+}
+
 /// ANSI escape codes for formatting
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

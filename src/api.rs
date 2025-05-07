@@ -12,7 +12,7 @@ use crate::async_println;
 use crate::consts::USER_AGENT;
 use crate::downloader::download_file;
 use crate::json;
-use crate::mfio::{ainput, select};
+use crate::mfio::{ainput, parse_to_int, select};
 use crate::profile::{get_locks, remove_locked_ones, write_lock};
 use crate::structs::{
     Dependency, Hash, MFHashMap, Project, ProjectList, Search, Version, VersionsList,
@@ -32,11 +32,11 @@ pub async fn fetch_latest_version(
     let params = &[
         (
             "loaders",
-            &serde_json::to_string(&[&working_profile.profile.loader])?,
+            &working_profile.profile.loader,
         ),
         (
             "game_versions",
-            &serde_json::to_string(&[&working_profile.profile.gameversion])?,
+            &working_profile.profile.gameversion,
         ),
     ];
 
@@ -158,20 +158,9 @@ pub async fn search_mods(
 
     // Parse the user input
     let selected_string = ainput(":out: Select mods to install: ").await?;
-    let selected_string = selected_string.split(' ');
 
     // Create a selected number list
-    let mut numbers: Vec<usize> = Vec::new();
-
-    // Parse the numbers
-    for object in selected_string {
-        numbers.push(
-            match object.parse::<usize>() {
-                Ok(number) => number,
-                Err(_) => return Err("Failed to parse arguments".into()),
-            } - 1,
-        );
-    }
+    let numbers = parse_to_int(selected_string)?;
 
     // Set the counter
     let mut counter: usize = 1;
@@ -200,24 +189,15 @@ pub async fn search_mods(
     }
 
     let nums_string = ainput(":out: Select mods to edit: ").await?;
-    let nums_string = nums_string.split(' ');
 
-    let list: Vec<&str> = nums_string.clone().collect::<Vec<&str>>();
+    let nums = match parse_to_int(nums_string) {
+        Ok(nums) => nums,
+        Err(_) => Vec::new(),
+    };
 
     let mut versions: Vec<(String, String, Option<Vec<Dependency>>)> = Vec::new();
 
-    if !list.is_empty() {
-        let mut nums: Vec<usize> = Vec::new();
-
-        for object in nums_string {
-            nums.push(
-                match object.parse::<usize>() {
-                    Ok(number) => number,
-                    Err(_) => return Err("Failed to parse arguments".into()),
-                } - 1,
-            );
-        }
-
+    if !nums.is_empty() {
         // Validate nums are within the selected mods range
         for num in &nums {
             if *num >= numbers.len() {
@@ -241,11 +221,11 @@ pub async fn search_mods(
         let params = &[
             (
                 "loaders",
-                &serde_json::to_string(&[&working_profile.profile.loader])?,
+                &working_profile.profile.loader,
             ),
             (
                 "game_versions",
-                &serde_json::to_string(&[&working_profile.profile.gameversion])?,
+                &working_profile.profile.gameversion,
             ),
         ];
 
@@ -302,7 +282,7 @@ pub async fn search_mods(
 
         // Create a version list using selected or latest versions
         for number in numbers {
-            let hit = parsed.hits.get(number).ok_or("Cannot get such mod")?;
+            let hit = parsed.hits.get(number - 1).ok_or("Cannot get such mod")?;
             let project_id = &hit.project_id;
 
             if let Some(selected_version) = selected_versions.get(project_id) {
@@ -324,7 +304,10 @@ pub async fn search_mods(
         }
     } else {
         for number in numbers {
-            let version: (String, String, Option<Vec<Dependency>>) = match parsed.hits.get(number) {
+            let version: (String, String, Option<Vec<Dependency>>) = match parsed
+                .hits
+                .get(number - 1)
+            {
                 Some(object) => fetch_latest_version(&object.project_id, working_profile).await?, // Get a mod
                 None => return Err("Cannot get such mod".into()), // The number is out of range
             };
@@ -631,11 +614,11 @@ pub async fn edit_mod(
     let params = &[
         (
             "loaders",
-            &serde_json::to_string(&[&working_profile.profile.loader])?,
+            &working_profile.profile.loader,
         ),
         (
             "game_versions",
-            &serde_json::to_string(&[&working_profile.profile.gameversion])?,
+            &working_profile.profile.gameversion,
         ),
     ];
 

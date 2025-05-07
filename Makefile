@@ -1,4 +1,4 @@
-PKGVER = 1.6.2
+PKGVER = 1.6.3
 
 all: x86_64 aarch64 riscv64gc clean package
 
