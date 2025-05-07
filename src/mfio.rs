@@ -161,6 +161,7 @@ pub fn parse_to_int(
             character
                 .parse::<usize>()
                 .expect("Failed to parse arguments".into())
+                - 1
         })
         .collect();
 
