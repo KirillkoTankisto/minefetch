@@ -78,12 +78,12 @@ pub struct Profile {
 /// Structure of the search response
 #[derive(Deserialize)]
 pub struct Search {
-    pub hits: Vec<Object>,
+    pub hits: Vec<Hit>,
 }
 
 /// The project structure from the search response
 #[derive(Deserialize)]
-pub struct Object {
+pub struct Hit {
     pub project_id: String,
     pub title: String,
 }

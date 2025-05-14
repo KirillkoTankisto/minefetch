@@ -7,6 +7,8 @@
 
 */
 
+use std::num::ParseIntError;
+
 // External crates
 use console::{Key, Term};
 use tokio::io::{self, AsyncBufReadExt, BufReader};
@@ -157,14 +159,9 @@ pub fn parse_to_int(
     // Create a numbers list
     let numbers: Vec<usize> = splitted_string
         .into_iter()
-        .map(|character| {
-            character
-                .parse::<usize>()
-                .expect("Failed to parse arguments".into())
-                - 1
-        })
-        .collect();
-
+        .map(|character| character.parse::<usize>().map(|number| number - 1))
+        .collect::<Result<Vec<usize>, ParseIntError>>()
+        .unwrap_or_default(); // If failed then return an empty list
     Ok(numbers)
 }
 
