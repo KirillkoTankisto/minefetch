@@ -1,1 +1,1 @@
-cargo +nightly build --release
+cargo build --release

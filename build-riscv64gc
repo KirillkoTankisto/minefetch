@@ -1,1 +1,1 @@
-CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_MUSL_LINKER=riscv64-unknown-linux-musl-gcc cargo +nightly build -Z build-std --target riscv64gc-unknown-linux-musl --release
+RUSTFLAGS="-C target-feature=+crt-static" cargo build -Z build-std --target riscv64gc-unknown-linux-musl --release
