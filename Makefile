@@ -1,10 +1,9 @@
 PKGVER        := 1.6.5
 TARGET_DIR    := target
-TARGETS       := x86_64-unknown-linux-musl aarch64-unknown-linux-musl riscv64gc-unknown-linux-musl
+TARGETS       := x86_64-unknown-linux-musl
 CARGO         := cargo build
-CARGO_FLAGS   := -rqt --config package.version=$(PKGVER)
-BUILD_STD     := -Z build-std
-COMMAND       := $(CARGO) $(BUILD_STD) $(CARGO_FLAGS)
+CARGO_FLAGS   := -rq --config package.version=\"$(PKGVER)\" --target
+COMMAND       := $(CARGO) $(CARGO_FLAGS)
 
 # default
 all: $(TARGETS) package
@@ -12,19 +11,6 @@ all: $(TARGETS) package
 # x86_64
 x86_64-unknown-linux-musl:
 	@echo ":out: Building $@"
-	@$(COMMAND) $@
-	@echo ":out: Finished building for $@"
-
-# aarch64
-aarch64-unknown-linux-musl:
-	@echo ":out: Building $@"
-	@$(COMMAND) $@
-	@echo ":out: Finished building for $@"
-
-# riscv64gc
-riscv64gc-unknown-linux-musl:
-	@echo ":out: Building $@"
-	@RUSTFLAGS="-C target-feature=+crt-static" \
 	@$(COMMAND) $@
 	@echo ":out: Finished building for $@"
 

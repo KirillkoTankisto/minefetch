@@ -14,7 +14,6 @@ use std::vec;
 
 // External crates
 use reqwest::Client;
-use rfd::AsyncFileDialog;
 
 // Internal imports
 use crate::api::list_mods;
@@ -69,25 +68,15 @@ pub async fn create_profile() -> Result<(), Box<dyn std::error::Error + Send + S
     press_enter().await?;
 
     // Get selected folder
-    let modsfolder = match AsyncFileDialog::new().pick_folder().await {
-        // Get a folder path
-        Some(file) => file
-            .path()
-            .to_str()
-            .ok_or_else(|| "Invalid UTF-8")?
-            .to_string(),
-        // If function user didn't choose any folder
-        None => {
-            let buffer = ainput(
-                ":out: Cannot launch the gui folder picker\n:: Enter the path to mods folder: ",
-            )
-            .await?;
-            let path = Path::new(&buffer);
-            if !path.exists() {
-                return Err("No folder with such name".into());
-            }
-            buffer.trim().to_string()
+    let modsfolder = {
+        let buffer =
+            ainput(":out: Cannot launch the gui folder picker\n:: Enter the path to mods folder: ")
+                .await?;
+        let path = Path::new(&buffer);
+        if !path.exists() {
+            return Err("No folder with such name".into());
         }
+        buffer.trim().to_string()
     };
 
     // Get minecraft version
