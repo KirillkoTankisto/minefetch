@@ -1,4 +1,0 @@
-[target.aarch64-unknown-linux-musl]
-linker = "aarch64-linux-musl-gcc"
-[target.riscv64gc-unknown-linux-musl]
-linker = "riscv64-unknown-linux-musl-gcc"

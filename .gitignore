@@ -1,8 +1,2 @@
-debug
-release
-.rustc_info.json
 target
-x86_64-unknown-linux-musl
-aarch64-unknown-linux-musl
-riscv64gc-unknown-linux-musl
 build-cross/minefetch-*

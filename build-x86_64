@@ -1,1 +1,0 @@
-RUSTFLAGS="-C target-feature=+crt-static" cargo build -Z build-std --release --target x86_64-unknown-linux-musl

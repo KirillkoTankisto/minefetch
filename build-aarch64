@@ -1,1 +1,0 @@
-cargo build -Z build-std --target aarch64-unknown-linux-musl --release
