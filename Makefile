@@ -1,7 +1,7 @@
 PKGVER        := 1.6.5
 TARGET_DIR    := target
 TARGETS       := x86_64-unknown-linux-musl aarch64-unknown-linux-musl riscv64gc-unknown-linux-musl
-CARGO         := cargo +nightly build
+CARGO         := cargo build
 CARGO_FLAGS   := -rqt --config package.version=$(PKGVER)
 BUILD_STD     := -Z build-std
 COMMAND       := $(CARGO) $(BUILD_STD) $(CARGO_FLAGS)
