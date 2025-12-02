@@ -2,11 +2,15 @@ PKGVER        := 1.6.5
 TARGET_DIR    := target
 TARGETS       := x86_64-unknown-linux-musl
 CARGO         := cargo build
-CARGO_FLAGS   := -rq --config package.version=\"$(PKGVER)\" --target
+CARGO_FLAGS   := -rq --target
 COMMAND       := $(CARGO) $(CARGO_FLAGS)
 
 # default
-all: $(TARGETS) package
+all: set-version $(TARGETS) package
+
+# set current version
+set-version:
+	@cargo set-version $(PKGVER)
 
 # x86_64
 x86_64-unknown-linux-musl:
