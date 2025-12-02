@@ -17,7 +17,6 @@ use serde_json::json;
 // Internal modules
 mod api;
 mod consts;
-mod coreutils;
 mod downloader;
 mod helpmsg;
 mod mfio;

@@ -14,7 +14,6 @@ use std::result::Result;
 // Internal modules
 use crate::Path;
 use crate::async_eprintln;
-use crate::coreutils::get_username;
 
 // External crates
 use rand::Rng;
@@ -22,6 +21,7 @@ use rand::distr::Alphanumeric;
 use sha1::{Digest, Sha1};
 use tokio::fs::DirEntry;
 use tokio::io::{self, AsyncReadExt};
+use uu_whoami::whoami;
 
 /// Generates random 64 char string
 pub async fn generate_hash() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
@@ -169,15 +169,12 @@ pub async fn get_jar_filename(entry: &DirEntry) -> Option<String> {
 
 /// Gets a home folder (Not sure if it works for windows)
 pub async fn get_homedir() -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
-    // Get a username
-    let username = get_username()?;
+    // Get the username
+    let username = whoami().expect("Couldn't get the username");
 
     // Join with the base home directory depending on the OS
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux",target_os = "openbsd", target_os = "freebsd", target_os = "netbsd"))]
     let homedir = PathBuf::from("/home/").join(username);
-
-    #[cfg(any(target_os = "openbsd", target_os = "freebsd", target_os = "netbsd"))]
-    let homedir = PathBuf::from("/usr/home/").join(username);
 
     #[cfg(target_os = "macos")]
     let homedir = PathBuf::from("/Users/").join(username);
