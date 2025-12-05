@@ -7,13 +7,13 @@
 
 */
 
+use std::env;
 // Standard imports
 use std::path::PathBuf;
 use std::result::Result;
 
 // Internal modules
 use crate::Path;
-use crate::async_eprintln;
 
 // External crates
 use rand::Rng;
@@ -21,10 +21,9 @@ use rand::distr::Alphanumeric;
 use sha1::{Digest, Sha1};
 use tokio::fs::DirEntry;
 use tokio::io::{self, AsyncReadExt};
-use uu_whoami::whoami;
 
 /// Generates random 64 char string
-pub async fn generate_hash() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn generate_hash() -> Result<String, Box<dyn std::error::Error>> {
     // Get a random hash
     let random_hash = tokio::task::spawn_blocking(|| {
         rand::rng()
@@ -42,7 +41,7 @@ pub async fn generate_hash() -> Result<String, Box<dyn std::error::Error + Send 
 /// Returns Vec<String> of hashes in given path
 pub async fn get_hashes(
     path: &str,
-) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     // Get files from path
     let mut entries = match tokio::fs::read_dir(path).await {
         Ok(entries) => entries,
@@ -74,9 +73,9 @@ pub async fn get_hashes(
         match task.await {
             Ok(Ok(hash)) => hashes.push(hash),
 
-            Ok(Err(error)) => async_eprintln!("Error processing hash: {error}").await,
+            Ok(Err(error)) => eprintln!("Error processing hash: {error}"),
 
-            Err(error) => async_eprintln!("Task error: {error}").await,
+            Err(error) => eprintln!("Task error: {error}"),
         }
     }
 
@@ -125,7 +124,7 @@ pub async fn calculate_sha1<P: AsRef<Path>>(path: P) -> io::Result<String> {
 pub async fn remove_mods_by_hash(
     modsfolder: &str,
     hashes_to_remove: &Vec<&String>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(), Box<dyn std::error::Error>> {
     // Read mods' folder
     let mut entries = tokio::fs::read_dir(modsfolder).await?;
 
@@ -168,26 +167,14 @@ pub async fn get_jar_filename(entry: &DirEntry) -> Option<String> {
 }
 
 /// Gets a home folder (Not sure if it works for windows)
-pub async fn get_homedir() -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
-    // Get the username
-    let username = whoami().expect("Couldn't get the username");
-
-    // Join with the base home directory depending on the OS
-    #[cfg(any(target_os = "linux",target_os = "openbsd", target_os = "freebsd", target_os = "netbsd"))]
-    let homedir = PathBuf::from("/home/").join(username);
-
-    #[cfg(target_os = "macos")]
-    let homedir = PathBuf::from("/Users/").join(username);
-
-    #[cfg(target_os = "windows")]
-    let homedir = PathBuf::from("C:\\Users\\").join(username);
-
-    // Return the home directory
+pub async fn get_homedir() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let homedir = env::home_dir().ok_or("Can't get the home directory")?;
+    
     Ok(homedir)
 }
 
 /// Gets a config path
-pub async fn get_confpath() -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn get_confpath() -> Result<PathBuf, Box<dyn std::error::Error>> {
     // Get a home folder
     let homedir = get_homedir().await?;
 
@@ -202,7 +189,7 @@ pub async fn get_confpath() -> Result<PathBuf, Box<dyn std::error::Error + Send 
 }
 
 /// Gets a config directory
-pub async fn get_confdir() -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn get_confdir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     // Get a home folder
     let homedir = get_homedir().await?;
 

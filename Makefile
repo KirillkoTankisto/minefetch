@@ -1,4 +1,4 @@
-PKGVER        := 1.6.5
+PKGVER        := 1.6.6
 TARGET_DIR    := target
 TARGETS       := x86_64-unknown-linux-musl
 CARGO         := cargo build

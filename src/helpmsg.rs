@@ -1,6 +1,6 @@
 // Internal modules
+use crate::HELP_MESSAGE;
 use crate::MFText;
-use crate::async_println;
 
 // Help message root
 pub struct Help {
@@ -16,34 +16,35 @@ pub struct Message {
 }
 
 /// Display a help message
-pub async fn display_help_msg(helpmsg: &Help) -> () {
+pub async fn display_help() -> () {
     // The amount of space that the largest 'name' takes
-    let space_size = find_the_largest_msg(helpmsg);
+    let space_size = find_the_largest_msg(&HELP_MESSAGE);
 
     // Print the header
-    async_println!(
-        ":hlp: {}{}{}\n:   :",
+    println!(
+        "\t{}{}{}\n",
         MFText::Bold,
-        helpmsg.header,
+        &HELP_MESSAGE.header,
         MFText::Reset
-    )
-    .await;
+    );
 
     // Print all messages
-    for message in helpmsg.message {
-        async_println!(
-            ":hlp: {}{} {}{}{}  ===>  {};",
+    for message in HELP_MESSAGE.message {
+        println!(
+            "\t{}{} {}{}{}\t{};",
             MFText::Bold,
-            &helpmsg.program_name, // program name
-            message.name,          // name of the command
+            &HELP_MESSAGE.program_name, // program name
+            message.name,               // name of the command
             MFText::Reset,
             " ".repeat(space_size - message.name.len()), // indent
             message.description                          // the description of the command
-        )
-        .await;
+        );
 
         // footer
-        async_println!(":   :").await;
+        println!(
+            "\t{}",
+            "~".repeat(message.name.len() + HELP_MESSAGE.program_name.len() + 2)
+        );
     }
 }
 

@@ -11,101 +11,10 @@ use std::num::ParseIntError;
 
 // External crates
 use console::{Key, Term};
-use tokio::io::{self, AsyncBufReadExt, BufReader};
-
-/// Macro for async std output (with \n)
-#[macro_export]
-macro_rules! async_println {
-    ($($arg:tt)*) => {{
-        async {
-            // Set the output to async stdout
-            let mut stdout = tokio::io::BufWriter::new(tokio::io::stdout());
-
-            // Write the input into stdout
-            if let Err(e) = tokio::io::AsyncWriteExt::write_all(
-                &mut stdout,
-                format!($($arg)*).as_bytes()
-            ).await {
-                eprintln!("Error writing to stdout: {}", e);
-            }
-
-            // Write newline into stdout
-            if let Err(e) = tokio::io::AsyncWriteExt::write_all(
-                &mut stdout,
-                b"\n"
-            ).await {
-                eprintln!("Error writing newline to stdout: {}", e);
-            }
-
-            /*
-                Flush the text to make sure that
-                everything has been written into stdout
-            */
-            if let Err(e) = tokio::io::AsyncWriteExt::flush(&mut stdout).await {
-                eprintln!("Error flushing stdout: {}", e);
-            }
-        }
-    }}
-}
-
-/// Macro for async stderr output (with \n)
-#[macro_export]
-macro_rules! async_eprintln {
-    ($($arg:tt)*) => {{
-        async {
-            // Set the output to async stderr
-            let mut stderr = tokio::io::BufWriter::new(tokio::io::stderr());
-
-            // Write the input into the stderr
-            if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut stderr, format!($($arg)*).as_bytes()).await {
-                eprintln!(":err: Error writing to stderr: {}", e);
-            }
-
-            // Write newline into the stderr
-            if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut stderr, b"\n").await {
-                eprintln!(":err: Error writing newline to stderr: {}", e);
-            }
-
-            /*
-                Flush the text to make sure that
-                everything has been written into stderr
-            */
-            if let Err(e) = tokio::io::AsyncWriteExt::flush(&mut stderr).await {
-                eprintln!(":err: Error flushing stderr: {}", e);
-            }
-        }
-    }}
-}
-
-/// Macro for async std output (without \n)
-#[macro_export]
-macro_rules! async_print {
-    ($($arg:tt)*) => {{
-        async {
-            // Set the output to async stdout
-            let mut stdout = tokio::io::BufWriter::new(tokio::io::stdout());
-
-            // Write the input into stdout
-            if let Err(e) = tokio::io::AsyncWriteExt::write_all(
-                &mut stdout,
-                format!($($arg)*).as_bytes()
-            ).await {
-                eprintln!(":err: Error writing to stdout: {}", e);
-            }
-
-            /*
-                Flush the text to make sure that
-                everything has been written into stdout
-            */
-            if let Err(e) = tokio::io::AsyncWriteExt::flush(&mut stdout).await {
-                eprintln!(":err: Error flushing stdout: {}", e);
-            }
-        }
-    }}
-}
+use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 /// Press enter to continue functionality
-pub async fn press_enter() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn press_enter() -> Result<(), Box<dyn std::error::Error>> {
     // Set the stdout (output)
     let term = Term::stdout();
 
@@ -132,7 +41,9 @@ pub async fn press_enter() -> Result<(), Box<dyn std::error::Error + Send + Sync
 }
 
 /// Reads user input and returns a String
-pub async fn ainput(prompt: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn ainput(prompt: &str) -> Result<String, Box<dyn std::error::Error>> {
+    tokio::io::stdout().flush().await?;
+    
     // Create a buffer
     let mut buffer = String::new();
 
@@ -140,7 +51,7 @@ pub async fn ainput(prompt: &str) -> Result<String, Box<dyn std::error::Error + 
     let mut reader = BufReader::new(tokio::io::stdin());
 
     // Print the prompt
-    async_print!("{}", prompt).await;
+    print!("{}", prompt);
 
     // Read the user input
     reader.read_line(&mut buffer).await?;
@@ -152,7 +63,7 @@ pub async fn ainput(prompt: &str) -> Result<String, Box<dyn std::error::Error + 
 /// Parses String to Vec<usize>
 pub fn parse_to_int(
     string: String,
-) -> Result<Vec<usize>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Vec<usize>, Box<dyn std::error::Error>> {
     // Split the string
     let splitted_string = string.split(' ');
 

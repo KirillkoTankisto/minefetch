@@ -10,20 +10,18 @@
 // Standard imports
 use std::path::{Path, PathBuf};
 use std::result::Result;
-use std::vec;
 
 // External crates
 use reqwest::Client;
 
 // Internal imports
 use crate::api::list_mods;
-use crate::async_println;
-use crate::mfio::{MFText, ainput, press_enter, select};
+use crate::mfio::select;
 use crate::structs::{Config, Locks, MFHashMap, Profile, WorkingProfile};
-use crate::utils::{generate_hash, get_confdir, get_confpath};
+use crate::utils::get_confpath;
 
 /// Returns single active Profile
-pub async fn read_config() -> Result<Profile, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn read_config() -> Result<Profile, Box<dyn std::error::Error>> {
     // Get config path
     let config_path = get_confpath().await?;
 
@@ -45,7 +43,7 @@ pub async fn read_config() -> Result<Profile, Box<dyn std::error::Error + Send +
 }
 
 /// Returns full Config
-pub async fn read_full_config() -> Result<Config, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn read_full_config() -> Result<Config, Box<dyn std::error::Error>> {
     // Get config path
     let config_path = get_confpath().await?;
 
@@ -59,265 +57,10 @@ pub async fn read_full_config() -> Result<Config, Box<dyn std::error::Error + Se
     Ok(config)
 }
 
-/// Creates config file
-pub async fn create_profile() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Print the text
-    async_println!(":out: Press enter to choose mods directory").await;
-
-    // Ask user to press enter
-    press_enter().await?;
-
-    // Get selected folder
-    let modsfolder = {
-        let buffer =
-            ainput(":out: Cannot launch the gui folder picker\n:: Enter the path to mods folder: ")
-                .await?;
-        let path = Path::new(&buffer);
-        if !path.exists() {
-            return Err("No folder with such name".into());
-        }
-        buffer.trim().to_string()
-    };
-
-    // Get minecraft version
-
-    let gameversion = ainput(":out: Type a Minecraft version: ").await?;
-
-    // A list of loaders
-    let loaders: Vec<(&str, &str)> = vec![
-        ("Quilt", "quilt"),
-        ("Fabric", "fabric"),
-        ("Forge", "forge"),
-        ("NeoForge", "neoforge"),
-    ];
-
-    // Ask user to select a loader
-    let loader = select("Choose a loader", loaders).await?;
-
-    // Ask to enter the name of the profile
-    let name = ainput(":out: What should this profile be called? ").await?;
-
-    // Get a full config
-    let mut current_config = match read_full_config().await {
-        Ok(config) => config,
-        Err(_) => Config::default(),
-    };
-
-    // Create a new profile
-    let new_profile = Profile {
-        active: true,
-        name,
-        modsfolder,
-        gameversion,
-        loader: loader.to_string(),
-        hash: generate_hash().await?,
-    };
-
-    // Set every previous profile as inactive
-    for profile in current_config.profile.iter_mut() {
-        profile.active = false;
-    }
-
-    // Push the new profile in the config
-    current_config.profile.push(new_profile);
-
-    // Translate into toml string
-    let string_toml = toml::to_string(&current_config)?;
-
-    // Get config directory
-    let config_dir = get_confdir().await?;
-
-    // Get a config path
-    let config_path = get_confpath().await?;
-
-    // Create a config folder if it doesn't exist
-    tokio::fs::create_dir_all(config_dir).await?;
-
-    // Write a config
-    tokio::fs::write(config_path, string_toml).await?;
-
-    // Success
-    Ok(())
-}
-
-/// Deletes one selected profile
-pub async fn delete_profile() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Get a mutable config
-    let mut config = match read_full_config().await {
-        Ok(config) => config,
-        Err(_) => {
-            return Err("There's no config yet, type minefetch profile create".into());
-        }
-    };
-
-    // Create a profile menu
-    let profiles: Vec<(&str, String)> = config
-        .profile
-        .iter()
-        .map(|profile| (profile.name.as_str(), profile.hash.clone()))
-        .collect();
-
-    // If there's no profiles
-    if profiles.is_empty() {
-        return Err("There are no profiles yet".into());
-    };
-
-    // Get a selected profile
-    let selected_value = select("Which profile to delete?", profiles).await?;
-
-    // Leave all profiles that don't have the same hash
-    config
-        .profile
-        .retain(|profile| profile.hash != selected_value);
-
-    // Translate into toml string
-    let string_toml = toml::to_string(&config)?;
-
-    // Get a config path
-    let config_path = get_confpath().await?;
-
-    // Write a config
-    tokio::fs::write(config_path, string_toml).await?;
-
-    // Success
-    Ok(())
-}
-
-/// Deletes config file completely
-pub async fn delete_all_profiles() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Read a config first to make sure that it won't anything else
-    match read_full_config().await {
-        Ok(config) => config,
-        Err(_) => {
-            return Err("There's no config yet, type minefetch profile create".into());
-        }
-    };
-
-    // Get a config path
-    let config_path = get_confpath().await?;
-
-    // Delete a config
-    tokio::fs::remove_file(config_path).await?;
-
-    // Success
-    Ok(())
-}
-
-/// Switches profile to selected one
-pub async fn switch_profile() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Get a mutable config
-    let mut config = match read_full_config().await {
-        Ok(config) => config,
-        Err(_) => {
-            return Err("There's no config yet, type minefetch profile create".into());
-        }
-    };
-
-    // Create a profile menu
-    let profiles: Vec<(String, String)> = config
-        .profile
-        .iter()
-        .map(|profile| {
-            let name = if profile.active {
-                format!(
-                    "[{}{}*{}] {} [{} {}] [{}]",
-                    MFText::Bold,
-                    MFText::Underline,
-                    MFText::Reset,
-                    profile.name,
-                    profile.loader,
-                    profile.gameversion,
-                    profile.modsfolder
-                )
-            } else {
-                format!(
-                    "[{}{} {}] {} [{} {}] [{}]",
-                    MFText::Bold,
-                    MFText::Underline,
-                    MFText::Reset,
-                    profile.name,
-                    profile.loader,
-                    profile.gameversion,
-                    profile.modsfolder
-                )
-            };
-            (name, profile.hash.clone())
-        })
-        .collect();
-
-    // Get a selected profile hash
-    let selected_hash = select("Which profile to switch to?", profiles).await?;
-
-    // Set a selected profile to active and others to inactive
-    for profile in config.profile.iter_mut() {
-        if profile.hash == *selected_hash {
-            profile.active = true
-        } else {
-            profile.active = false;
-        }
-    }
-
-    // Translate into toml string
-    let string_toml = toml::to_string(&config)?;
-
-    // Get a config path
-    let config_path = get_confpath().await?;
-
-    // Write a config
-    tokio::fs::write(config_path, string_toml).await?;
-
-    // Success
-    Ok(())
-}
-
-/// Lists all profiles
-pub async fn list_profiles() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Get all profiles
-    let config = match read_full_config().await {
-        Ok(config) => config,
-        Err(_) => {
-            return Err("There's no config yet, type minefetch profile create".into());
-        }
-    };
-
-    // Print the profiles
-    for profile in config.profile {
-        // If it's active then add an asterisk
-        if profile.active {
-            async_println!(
-                "[{}{}*{}] {} [{} {}] [{}]",
-                MFText::Bold,
-                MFText::Underline,
-                MFText::Reset,
-                profile.name,
-                profile.loader,
-                profile.gameversion,
-                profile.modsfolder
-            )
-            .await
-        } else {
-            async_println!(
-                "[{}{} {}] {} [{} {}] [{}]",
-                MFText::Bold,
-                MFText::Underline,
-                MFText::Reset,
-                profile.name,
-                profile.loader,
-                profile.gameversion,
-                profile.modsfolder
-            )
-            .await
-        }
-    }
-
-    // Success
-    Ok(())
-}
-
 /// Gets a list of locks
 pub async fn get_locks(
     profile: &Profile,
-) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     // Get a lock path
     let locks_path = get_locks_path(profile);
 
@@ -344,7 +87,7 @@ pub async fn get_locks(
 /// Adds a lock
 pub async fn add_lock(
     working_profile: &WorkingProfile,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(), Box<dyn std::error::Error>> {
     // Get a mod list
     let (_, versions) = list_mods(&working_profile).await?;
 
@@ -353,16 +96,7 @@ pub async fn add_lock(
 
     // Push the version files into 'modmenu'
     for version in versions {
-        modmenu.push((
-            version
-                .1
-                .files
-                .iter()
-                .find(|file| file.primary)
-                .ok_or("No primary file found")
-                .map(|file| file.filename.clone())?,
-            version.0,
-        ))
+        modmenu.push((version.title, version.hash))
     }
 
     // Select a hash
@@ -379,7 +113,7 @@ pub async fn add_lock(
 pub async fn write_lock(
     profile: &Profile,
     hash: String,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(), Box<dyn std::error::Error>> {
     // Get a mutable lock list
     let mut locks = match get_locks(&profile).await {
         Ok(locks) => locks,
@@ -405,7 +139,7 @@ pub async fn write_lock(
 /// Removes a lock
 pub async fn remove_lock(
     working_profile: &WorkingProfile,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(), Box<dyn std::error::Error>> {
     // Get a mutable lock list
     let mut locks = get_locks(&working_profile.profile).await?;
 
@@ -421,18 +155,12 @@ pub async fn remove_lock(
     */
     for lock in &locks {
         // Get a each version info using its hash
-        let (name, filename) = match mods.get_key_value(lock) {
+        let (name, filename) = match mods
+            .iter()
+            .find_map(|v| if v.hash == *lock { Some(v) } else { None })
+        {
             // If it's in the mod list then clone its info
-            Some(value) => (
-                value.1.name.clone(),
-                value
-                    .1
-                    .files
-                    .iter()
-                    .find(|file| file.primary)
-                    .ok_or("No primary file found")
-                    .map(|file| file.filename.clone())?,
-            ),
+            Some(value) => (value.title.clone(), value.filename.clone()),
 
             /*
                 If not then continue
@@ -478,7 +206,7 @@ pub async fn remove_lock(
 pub async fn remove_locked_ones(
     hashmap: &mut MFHashMap,
     locks: Vec<String>,
-) -> Result<&mut MFHashMap, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<&mut MFHashMap, Box<dyn std::error::Error>> {
     /*
         A loop which removes
         the locks from the hashmap
@@ -500,7 +228,7 @@ pub fn get_locks_path(profile: &Profile) -> PathBuf {
 /// Lists all locks
 pub async fn list_locks(
     working_profile: &WorkingProfile,
-) -> Result<Vec<(usize, String, String)>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Vec<(usize, String, String)>, Box<dyn std::error::Error>> {
     // Get a locks' list
     let locks = get_locks(&working_profile.profile).await?;
 
@@ -519,19 +247,18 @@ pub async fn list_locks(
     */
     for lock in locks {
         // Get a version by hash
-        let (name, filename) = match mods.get_key_value(&lock) {
-            // If the mod exists
-            Some(version) => (
-                version.1.name.clone(),
-                version
-                    .1
-                    .files
-                    .iter()
-                    .find(|file| file.primary)
-                    .ok_or("No primary file found")
-                    .map(|file| file.filename.clone())?,
-            ),
-            // If not then skip
+        let (name, filename) = match mods
+            .iter()
+            .find_map(|v| if v.hash == *lock { Some(v) } else { None })
+        {
+            // If it's in the mod list then clone its info
+            Some(value) => (value.title.clone(), value.filename.clone()),
+
+            /*
+                If not then continue
+                (This case mustn't even happen unless
+                the mod was deleted by user)
+            */
             None => continue,
         };
 
@@ -548,7 +275,7 @@ pub async fn list_locks(
 
 /// Creates a WorkingProfile which contains a Client and a Profile
 pub async fn build_working_profile()
--> Result<WorkingProfile, Box<dyn std::error::Error + Send + Sync>> {
+-> Result<WorkingProfile, Box<dyn std::error::Error>> {
     // Read the profile
     let profile = read_config().await?;
 

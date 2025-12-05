@@ -92,6 +92,7 @@ pub struct Hit {
 #[derive(Deserialize, Clone)]
 pub struct Project {
     pub title: String,
+    pub id: String,
 }
 
 pub type ProjectList = Vec<Project>;

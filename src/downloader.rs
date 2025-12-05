@@ -9,7 +9,7 @@
 
 // Internal modules
 use crate::consts::USER_AGENT;
-use crate::{Dependency, async_eprintln, async_println, get_dependencies};
+use crate::{Dependency, get_dependencies};
 
 // Standard imports
 use std::path::{Path, PathBuf};
@@ -25,7 +25,7 @@ pub async fn download_file(
     filename: &str,
     url: &str,
     client: &Client,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(), Box<dyn std::error::Error>> {
     // Create a destination directory if it doesn't exist
     tokio::fs::create_dir_all(path).await?;
 
@@ -56,7 +56,7 @@ pub async fn download_multiple_files(
     files: Vec<(String, String, Option<Vec<Dependency>>)>,
     path: &str,
     client: &Client,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(), Box<dyn std::error::Error>> {
     // Tasks' list
     let mut handles = Vec::new();
 
@@ -74,24 +74,23 @@ pub async fn download_multiple_files(
 
         // Check if this path safe (inside base_path)
         if !sanitized_path.starts_with(base_path) {
-            async_eprintln!(
+            eprintln!(
                 ":err: Potential path traversal attack detected: {:?}",
                 sanitized_path
-            )
-            .await;
+            );
             continue;
         }
 
         // Create a task
         let handle = tokio::spawn(async move {
             // Print the text
-            async_println!(":out: Downloading {}", &filename).await;
+            println!(":out: Downloading {}", &filename);
 
             // Convert path to &str
             let path_str = match sanitized_path.to_str() {
                 Some(path) => path,
                 None => {
-                    async_eprintln!(":err: Invalid UTF-8 path for {}", filename).await;
+                    eprintln!(":err: Invalid UTF-8 path for {}", filename);
                     return; // Exit the task early
                 }
             };
@@ -100,7 +99,7 @@ pub async fn download_multiple_files(
             match download_file(path_str, &filename, &url, &client_download).await {
                 Ok(_) => {}
                 Err(error) => {
-                    async_eprintln!(":err: Failed to download {}: {}", filename, error).await
+                    eprintln!(":err: Failed to download {}: {}", filename, error)
                 }
             }
         });
@@ -113,7 +112,7 @@ pub async fn download_multiple_files(
 
                 // Print the list
                 for dependency in list {
-                    async_println!(":dep: {} {}", dependency.0, dependency.1).await;
+                    println!(":dep: {} {}", dependency.0, dependency.1);
                 }
             }
             None => {}
@@ -126,7 +125,7 @@ pub async fn download_multiple_files(
     // Execute the tasks
     for handle in handles {
         if let Err(error) = handle.await {
-            async_eprintln!(":err: Task panicked: {:?}", error).await;
+            eprintln!(":err: Task panicked: {:?}", error);
         }
     }
 
