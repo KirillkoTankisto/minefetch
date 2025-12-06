@@ -14,7 +14,7 @@ use crate::json;
 use crate::mfio::{ainput, parse_to_int, select};
 use crate::profile::{get_locks, remove_locked_ones, write_lock};
 use crate::structs::{
-    Dependency, Hash, MFHashMap, Project, ProjectList, Search, Version, VersionsList,
+    Dependency, Hash, MFHashMap, Project, ProjectList, Search, VersionsList,
     WorkingProfile,
 };
 use crate::utils::{get_hashes, remove_mods_by_hash};
@@ -28,7 +28,7 @@ use std::error::Error;
 pub async fn fetch_latest_version(
     modname: &String,
     working_profile: &WorkingProfile,
-) -> Result<(String, String, Option<Vec<Dependency>>), Box<dyn std::error::Error>> {
+) -> Result<Anymod, Box<dyn std::error::Error>> {
     // Set the parameters for the URL
     let params = &[
         (
@@ -92,19 +92,27 @@ pub async fn fetch_latest_version(
         .find(|file| file.primary)
         .ok_or("No primary file found")?;
 
-    // Return all info about mod version
-    Ok((
-        file.filename.clone(),
-        file.url.clone(),
-        version.dependencies.clone(),
-    ))
+    let title = get_projects_name(&working_profile.client, vec![&version.project_id]).await?.first().unwrap().title.clone();
+    
+    let anymod = Anymod {
+        title: Some(title.clone()),
+        project_id: version.project_id.clone(),
+        version_name: version.name.clone(),
+        version_id: version.id.clone(),
+        filename: file.filename.clone(),
+        hash: file.hashes.sha1.clone(),
+        url: file.url.clone(),
+        depends: version.dependencies.clone()
+    };
+    
+    Ok(anymod)
 }
 
 /// Mod search
 pub async fn search_mods(
     query: &str,
     working_profile: &WorkingProfile,
-) -> Result<Vec<(String, String, Option<Vec<Dependency>>)>, Box<dyn Error>> {
+) -> Result<Vec<Anymod>, Box<dyn Error>> {
     /*
     Get the current mods' list to compare with
     versions that user will try to install. It's needed to
@@ -181,137 +189,16 @@ pub async fn search_mods(
             None => return Err("Cannot get such mod".into()),
         };
     }
+    
+    // The list of mods to install
+    let mut versions: Vec<Anymod> = Vec::new();
 
-    /*
-        Ask user to type out the numbers of
-        the mods they want to edit
-    */
-
-    let nums_string = ainput(":out: Select mods to edit: ").await?;
-
-    /*
-        Transform the string into the list of
-        integers and create an empty one if there's error
-    */
-    let nums = match parse_to_int(nums_string) {
-        Ok(nums) => nums,
-        Err(_) => Vec::new(),
-    };
-
-    let mut versions: Vec<(String, String, Option<Vec<Dependency>>)> = Vec::new();
-
-    if !nums.is_empty() {
-        // Validate nums are within the selected mods range
-        for num in &nums {
-            if *num >= numbers.len() {
-                return Err("Invalid mod selection".into());
-            }
-        }
-
-        // Collect project IDs from the selected mods (using original hit indices)
-        let mut projects: Vec<String> = Vec::new();
-        for num in &nums {
-            let hit_index = numbers[*num]; // Get the original hit index from numbers
-            match parsed.hits.get(hit_index) {
-                Some(hit) => {
-                    projects.push(hit.project_id.clone());
-                }
-                None => return Err("Cannot get such mod".into()),
-            }
-        }
-
-        // Set the parameters for the URL
-        let params = &[
-            (
-                "loaders",
-                &serde_json::to_string(&[&working_profile.profile.loader])?,
-            ),
-            (
-                "game_versions",
-                &serde_json::to_string(&[&working_profile.profile.gameversion])?,
-            ),
-        ];
-
-        let these_versions = list_versions(working_profile, projects, params).await?;
-
-        let version_names = get_project_name(
-            &working_profile.client,
-            these_versions.iter().map(|(id, _)| id).collect(),
-        )
-        .await?;
-
-        let version_complex: Vec<(String, Vec<Version>, Project)> = these_versions
-            .into_iter()
-            .zip(version_names.into_iter())
-            .map(|((project_id, versions), project)| (project_id, versions, project))
-            .collect();
-
-        // Store selected versions for edited projects
-        let mut selected_versions: MFHashMap = MFHashMap::new();
-
-        for (project_id, versions_list, project) in version_complex {
-            let versions_menu: Vec<(&String, &Version)> = versions_list
-                .iter()
-                .map(|version| (&version.name, version))
-                .collect();
-            let selected = select(
-                &format!("Select a version for {}", project.title),
-                versions_menu,
-            )
-            .await?;
-
-            // Create a yes / no dialog (lock the mod or not)
-            let lock_menu = vec![("Yes".to_string(), true), ("No".to_string(), false)];
-
-            // If user chooses Yes then lock the mod
-            if select("Do you want to lock this mod?", lock_menu).await? {
-                write_lock(
-                    &working_profile.profile,
-                    selected
-                        .files
-                        .iter()
-                        .find(|file| file.primary)
-                        .unwrap()
-                        .hashes
-                        .sha1
-                        .clone(),
-                )
-                .await?
-            }
-
-            selected_versions.insert(project_id, selected.clone());
-        }
-
-        // Create a version list using selected or latest versions
-        for number in numbers {
-            let hit = parsed.hits.get(number).ok_or("Cannot get such mod")?;
-            let project_id = &hit.project_id;
-
-            if let Some(selected_version) = selected_versions.get(project_id) {
-                // Use the user-selected version
-                let file = selected_version
-                    .files
-                    .iter()
-                    .find(|file| file.primary)
-                    .unwrap();
-
-                let (filename, url) = (file.filename.clone(), file.url.clone());
-
-                versions.push((filename, url, selected_version.dependencies.clone()));
-            } else {
-                // Fetch latest version if not edited
-                let version = fetch_latest_version(project_id, working_profile).await?;
-                versions.push(version);
-            }
-        }
-    } else {
-        for number in numbers {
-            let version: (String, String, Option<Vec<Dependency>>) = match parsed.hits.get(number) {
-                Some(object) => fetch_latest_version(&object.project_id, working_profile).await?, // Get a mod
-                None => return Err("Cannot get such mod".into()), // The number is out of range
-            };
-            versions.push(version);
-        }
+    // Create a version list using selected or latest versions
+    for number in numbers {
+        let hit = parsed.hits.get(number).ok_or("Cannot get such mod")?;
+        let project_id = &hit.project_id;
+        let version = fetch_latest_version(project_id, working_profile).await?;
+        versions.push(version);
     }
 
     Ok(versions)
@@ -320,7 +207,7 @@ pub async fn search_mods(
 /// Updates mods to the latest version
 pub async fn upgrade_mods(
     working_profile: &WorkingProfile,
-) -> Result<Vec<(String, String, Option<Vec<Dependency>>)>, Box<dyn Error>> {
+) -> Result<Vec<Anymod>, Box<dyn Error>> {
     // Get hashes from mods' directory
     let hashes = get_hashes(&working_profile.profile.modsfolder).await?;
 
@@ -401,7 +288,7 @@ pub async fn upgrade_mods(
     }
 
     // Create a list of updated versions
-    let mut new_versions = Vec::new();
+    let mut new_versions: Vec<Anymod> = Vec::new();
 
     // Create a list of hashes to remove (outdated mods)
     let mut hashes_to_remove = Vec::new();
@@ -409,7 +296,17 @@ pub async fn upgrade_mods(
     // Fill the 'new_versions' and 'hashes_to_remove' lists
     for (hash, version) in versions {
         if let Some(files) = version.files.iter().find(|file| file.primary) {
-            new_versions.push((files.filename.clone(), files.url.clone(), None));
+            let anymod = Anymod {
+                title: None,
+                project_id: version.project_id.clone(),
+                version_name: version.name.clone(),
+                version_id: version.id.clone(),
+                filename: files.filename.clone(),
+                hash: files.hashes.sha1.clone(),
+                url: files.url.clone(),
+                depends: version.dependencies.clone()
+            };
+            new_versions.push(anymod);
             hashes_to_remove.push(hash);
         }
     }
@@ -425,12 +322,14 @@ pub async fn upgrade_mods(
 
 #[derive(Clone)]
 pub struct Anymod {
-    pub title: String,
+    pub title: Option<String>,
     pub project_id: String,
     pub version_name: String,
     pub version_id: String,
     pub filename: String,
     pub hash: String,
+    pub url: String,
+    pub depends: Option<Vec<Dependency>>,
 }
 
 /// Lists mods in selected profile
@@ -469,7 +368,15 @@ pub async fn list_mods(
     // Parse the response
     let versions: MFHashMap = serde_json::from_str(&response)?;
 
-    let pairs: Vec<(String, String, String, String, String)> = versions
+    let pairs: Vec<(
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        Option<Vec<Dependency>>,
+    )> = versions
         .iter()
         .map(|(_, v)| {
             let name = v.name.clone();
@@ -482,13 +389,15 @@ pub async fn list_mods(
                 file.filename.clone(),
                 v.id.clone(),
                 file.hashes.sha1.clone(),
+                file.url.clone(),
+                v.dependencies.clone(),
             )
         })
         .collect();
 
-    let project_ids: Vec<&String> = pairs.iter().map(|(_, id, _, _, _)| id).collect();
+    let project_ids: Vec<&String> = pairs.iter().map(|(_, id, _, _, _, _, _)| id).collect();
 
-    let projects = get_project_name(&working_profile.client, project_ids).await?;
+    let projects = get_projects_name(&working_profile.client, project_ids).await?;
 
     let projects_map: HashMap<String, String> = projects
         .into_iter()
@@ -497,14 +406,16 @@ pub async fn list_mods(
 
     let mut end: Vec<Anymod> = Vec::new();
 
-    for (name, pid, filename, vid, hash) in pairs.iter() {
+    for (name, pid, filename, vid, hash, url, depends) in pairs.iter() {
         let anymod = Anymod {
-            title: projects_map[pid].clone(),
+            title: Some(projects_map[pid].clone()),
             version_name: name.clone(),
             version_id: vid.clone(),
             project_id: pid.clone(),
             filename: filename.clone(),
             hash: hash.clone(),
+            url: url.clone(),
+            depends: depends.clone(),
         };
         end.push(anymod);
     }
@@ -552,7 +463,7 @@ pub async fn get_dependencies(
     Ok(dependency_list)
 }
 
-pub async fn get_project_name(
+pub async fn get_projects_name(
     client: &Client,
     project_id: Vec<&String>,
 ) -> Result<ProjectList, Box<dyn Error>> {
@@ -570,59 +481,64 @@ pub async fn get_project_name(
         .await?
         .text()
         .await?;
+
     let parsed: ProjectList = serde_json::from_str(&response)?;
 
     Ok(parsed)
 }
 
+/// Lists versions for one project
 pub async fn list_versions(
     working_profile: &WorkingProfile,
-    projects: Vec<String>,
+    project: String,
     params: &[(&str, &String)],
-) -> Result<Vec<(String, VersionsList)>, Box<dyn std::error::Error>> {
-    let mut tasks: Vec<
-        tokio::task::JoinHandle<Result<(String, VersionsList), Box<dyn std::error::Error + Send>>>,
-    > = Vec::new();
+) -> Result<Vec<Anymod>, Box<dyn std::error::Error>> {
+    let client = working_profile.client.clone();
+    let url = reqwest::Url::parse_with_params(
+        &format!("https://api.modrinth.com/v2/project/{}/version", &project),
+        params,
+    )?;
 
-    for project in projects {
-        let client = working_profile.client.clone();
-        let url = reqwest::Url::parse_with_params(
-            &format!("https://api.modrinth.com/v2/project/{}/version", &project),
-            params,
-        )?;
+    let response = client
+        .get(url)
+        .header("User-Agent", USER_AGENT)
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
 
-        let this_task = tokio::spawn(async move {
-            let response = client
-                .get(url)
-                .header("User-Agent", USER_AGENT)
-                .send()
-                .await
-                .unwrap()
-                .text()
-                .await
-                .unwrap();
+    let versions: VersionsList = serde_json::from_str(&response)?;
 
-            let parsed: VersionsList = serde_json::from_str(&response).unwrap();
-            Ok((project, parsed)) as Result<_, Box<dyn std::error::Error + Send>>
-        });
-
-        tasks.push(this_task);
+    let mut end: Vec<Anymod> = Vec::new();
+    let title = get_projects_name(&client, vec![&versions.first().unwrap().project_id])
+        .await?
+        .first()
+        .unwrap()
+        .title
+        .clone();
+    let project_id = versions.first().unwrap().project_id.clone();
+    for version in versions {
+        let file = version
+            .files
+            .iter()
+            .find(|file| file.primary)
+            .ok_or("Couldn't find the primary file")?;
+        let anymod = Anymod {
+            title: Some(title.clone()),
+            project_id: project_id.clone(),
+            version_name: version.name,
+            version_id: version.id,
+            filename: file.filename.clone(),
+            hash: file.hashes.sha1.clone(),
+            url: file.url.clone(),
+            depends: version.dependencies,
+        };
+        end.push(anymod);
     }
 
-    let task_results: Vec<Result<(String, VersionsList), Box<dyn std::error::Error>>> =
-        futures::future::join_all(tasks)
-            .await
-            .into_iter()
-            .map(|res| match res {
-                Ok(inner) => inner.map_err(|e| e as Box<dyn std::error::Error>),
-                Err(join_err) => Err(Box::new(join_err) as Box<dyn std::error::Error>),
-            })
-            .collect();
-
-    let versions: Vec<(String, VersionsList)> =
-        task_results.into_iter().collect::<Result<_, _>>()?;
-
-    Ok(versions)
+    Ok(end)
 }
 
 /// Edits a mod
@@ -641,8 +557,8 @@ pub async fn edit_mod(working_profile: &WorkingProfile) -> Result<(), Box<dyn Er
         menu.push((
             format!(
                 "{} ({})",
-                modinfo.title,    // Version name
-                modinfo.filename  // Version filename
+                modinfo.version_name, // Version name
+                modinfo.filename      // Version filename
             ),
             modinfo, // What the program sees
         ));
@@ -664,24 +580,20 @@ pub async fn edit_mod(working_profile: &WorkingProfile) -> Result<(), Box<dyn Er
     ];
 
     // Parse the response
-    let parsed = list_versions(working_profile, vec![mod_to_edit.project_id], params)
-        .await?
-        .get(0)
-        .unwrap()
-        .clone();
+    let parsed = list_versions(working_profile, mod_to_edit.project_id, params).await?;
 
     /*
         Create a list of available versions.
         Then, user chooses which of them to install
     */
-    let mut versions_to_install: Vec<(String, &Version)> = Vec::new();
+    let mut versions_to_install: Vec<(String, &Anymod)> = Vec::new();
 
     // Fill the list with all available versions
-    for version in &parsed.1 {
-        let version_name = if version.id == mod_to_edit.version_id {
-            &format!("{} (Installed)", version.name) // If mod is installed
+    for version in &parsed {
+        let version_name = if version.version_id == mod_to_edit.version_id {
+            &format!("{} (Installed)", version.version_name) // If mod is installed
         } else {
-            &version.name // if not
+            &version.version_name // if not
         };
 
         // Push the version name and a version struct
@@ -692,28 +604,21 @@ pub async fn edit_mod(working_profile: &WorkingProfile) -> Result<(), Box<dyn Er
     let version_to_install = select("Choose a version to install", versions_to_install).await?;
 
     // Check if the selected mod version equals to already installed one
-    if version_to_install.name == mod_to_edit.version_name {
+    if version_to_install.version_id == mod_to_edit.version_id {
         return Err("This mod is already installed".into());
     }
-
-    // Get the new mod's file info
-    let mod_file = version_to_install
-        .files
-        .iter()
-        .find(|file| file.primary)
-        .unwrap();
 
     // Download the selected mod version
     download_file(
         &working_profile.profile.modsfolder,
-        &mod_file.filename,
-        &mod_file.url,
+        &version_to_install.filename,
+        &version_to_install.url,
         &working_profile.client,
     )
     .await?;
 
     // Print the text
-    println!(":out: Downloaded {}", &mod_file.filename);
+    println!(":out: Downloaded {}", &version_to_install.filename);
 
     // Delete the old mod
     remove_mods_by_hash(
@@ -730,7 +635,7 @@ pub async fn edit_mod(working_profile: &WorkingProfile) -> Result<(), Box<dyn Er
 
     // If user chooses Yes then lock the mod
     if select("Do you want to lock this mod?", lock_menu).await? {
-        write_lock(&working_profile.profile, mod_file.hashes.sha1.clone()).await?
+        write_lock(&working_profile.profile, version_to_install.hash.clone()).await?
     }
 
     // Success

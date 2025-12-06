@@ -96,7 +96,7 @@ pub async fn add_lock(
 
     // Push the version files into 'modmenu'
     for version in versions {
-        modmenu.push((version.title, version.hash))
+        modmenu.push((version.title.unwrap(), version.hash))
     }
 
     // Select a hash
@@ -171,7 +171,7 @@ pub async fn remove_lock(
         };
 
         // Push the info into lock menu
-        lockmenu.push((format!("{} ({})", name, filename), lock.to_string()));
+        lockmenu.push((format!("{} ({})", name.unwrap(), filename), lock.to_string()));
     }
 
     // Choose a hash
@@ -263,7 +263,7 @@ pub async fn list_locks(
         };
 
         // Push into the result
-        result.push((counter, name, filename));
+        result.push((counter, name.unwrap(), filename));
 
         // Append to the counter
         counter += 1;

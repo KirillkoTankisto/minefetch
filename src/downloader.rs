@@ -9,7 +9,8 @@
 
 // Internal modules
 use crate::consts::USER_AGENT;
-use crate::{Dependency, get_dependencies};
+use crate::get_dependencies;
+use crate::Anymod;
 
 // Standard imports
 use std::path::{Path, PathBuf};
@@ -53,7 +54,7 @@ pub async fn download_file(
 
 /// Downloads multiple files
 pub async fn download_multiple_files(
-    files: Vec<(String, String, Option<Vec<Dependency>>)>,
+    files: Vec<Anymod>,
     path: &str,
     client: &Client,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -64,7 +65,7 @@ pub async fn download_multiple_files(
     let base_path = Path::new(path);
 
     // Going through all files that must be downloaded
-    for (filename, url, dependencies) in files {
+    for file in files {
         // Copy the client
         let client_download = client.clone();
         let client_dependencies = client.clone();
@@ -84,28 +85,28 @@ pub async fn download_multiple_files(
         // Create a task
         let handle = tokio::spawn(async move {
             // Print the text
-            println!(":out: Downloading {}", &filename);
+            println!(":out: Downloading {}", &file.filename);
 
             // Convert path to &str
             let path_str = match sanitized_path.to_str() {
                 Some(path) => path,
                 None => {
-                    eprintln!(":err: Invalid UTF-8 path for {}", filename);
+                    eprintln!(":err: Invalid UTF-8 path for {}", &file.filename);
                     return; // Exit the task early
                 }
             };
 
             // Download a file
-            match download_file(path_str, &filename, &url, &client_download).await {
+            match download_file(path_str, &file.filename, &file.url, &client_download).await {
                 Ok(_) => {}
                 Err(error) => {
-                    eprintln!(":err: Failed to download {}: {}", filename, error)
+                    eprintln!(":err: Failed to download {}: {}", &file.filename, error)
                 }
             }
         });
 
         // Check if the mod has any dependencies
-        match dependencies {
+        match &file.depends {
             Some(dep) => {
                 // Get a list of dependencies
                 let list = get_dependencies(&dep, &client_dependencies).await?;

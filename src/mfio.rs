@@ -42,16 +42,16 @@ pub async fn press_enter() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Reads user input and returns a String
 pub async fn ainput(prompt: &str) -> Result<String, Box<dyn std::error::Error>> {
-    tokio::io::stdout().flush().await?;
-    
+    // Print the prompt
+    let mut stdout = io::stdout();
+    stdout.write_all(prompt.as_bytes()).await?;
+    stdout.flush().await?;
+
     // Create a buffer
     let mut buffer = String::new();
 
     // Create a reader
     let mut reader = BufReader::new(tokio::io::stdin());
-
-    // Print the prompt
-    print!("{}", prompt);
 
     // Read the user input
     reader.read_line(&mut buffer).await?;
@@ -61,9 +61,7 @@ pub async fn ainput(prompt: &str) -> Result<String, Box<dyn std::error::Error>> 
 }
 
 /// Parses String to Vec<usize>
-pub fn parse_to_int(
-    string: String,
-) -> Result<Vec<usize>, Box<dyn std::error::Error>> {
+pub fn parse_to_int(string: String) -> Result<Vec<usize>, Box<dyn std::error::Error>> {
     // Split the string
     let splitted_string = string.split(' ');
 

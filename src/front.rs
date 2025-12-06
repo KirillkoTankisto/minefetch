@@ -27,17 +27,17 @@ pub async fn add_mod(modname: &str) -> Result<(), Box<dyn Error>> {
     // Download this version
     download_file(
         &working_profile.profile.modsfolder,
-        &mod_version.0,
-        &mod_version.1,
+        &mod_version.filename,
+        &mod_version.url,
         &working_profile.client,
     )
     .await?;
 
     // Print text
-    println!(":out: Downloaded {} ({})", &modname, &mod_version.0);
+    println!(":out: Downloaded {} ({})", &mod_version.title.unwrap(), &mod_version.filename);
 
     // Check for existing dependencies
-    match mod_version.2 {
+    match mod_version.depends {
         Some(dependencies) => {
             // Get the dependencies' info
             let dependencies = get_dependencies(&dependencies, &working_profile.client).await?;
@@ -369,7 +369,7 @@ pub async fn list() -> Result<(), Box<dyn Error>> {
                     num + 1,
                     MFText::Reset,
                     MFText::Bold,
-                    anymod.title,
+                    anymod.title.clone().unwrap_or_default(),
                     MFText::Reset,
                     anymod.filename,
                 );
