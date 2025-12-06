@@ -7,20 +7,20 @@
 
 */
 
-use std::env;
 // Standard imports
+use std::env;
+use std::fs::File;
+use std::io::BufReader;
+use std::io::Read;
+use std::path::Path;
 use std::path::PathBuf;
 use std::result::Result;
-
-// Internal modules
-use crate::Path;
 
 // External crates
 use rand::Rng;
 use rand::distr::Alphanumeric;
 use sha1::{Digest, Sha1};
 use tokio::fs::DirEntry;
-use tokio::io::{self, AsyncReadExt};
 
 /// Generates random 64 char string
 pub async fn generate_hash() -> Result<String, Box<dyn std::error::Error>> {
@@ -40,81 +40,64 @@ pub async fn generate_hash() -> Result<String, Box<dyn std::error::Error>> {
 
 /// Returns Vec<String> of hashes in given path
 pub async fn get_hashes(path: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-    // Get files from path
-    let mut entries = match tokio::fs::read_dir(path).await {
-        Ok(entries) => entries,
-        Err(_) => return Err(":out: There are no mods yet".into()),
-    };
+    let mut dir = tokio::fs::read_dir(path)
+        .await
+        .map_err(|_| "There's no mods yet")?;
 
-    // Create a hash list
-    let mut hashes: Vec<String> = Vec::new();
+    let mut paths: Vec<PathBuf> = Vec::new();
 
-    // Create tasks list
-    let mut tasks = vec![];
-
-    // Go through every object in path
-    while let Some(entry) = entries.next_entry().await? {
-        // Get a path to the file / folder
-        let path = entry.path();
-
-        // If it's a file
-        if path.is_file() {
-            // Add a task
-            tasks.push(tokio::task::spawn(
-                async move { calculate_sha1(&path).await },
-            ));
+    while let Some(entry) = dir.next_entry().await? {
+        if entry.file_type().await?.is_file() {
+            paths.push(entry.path());
         }
     }
 
-    // Join tasks
-    for task in tasks {
-        match task.await {
+    if paths.is_empty() {
+        return Err("No entries to calculate".into());
+    }
+
+    let mut handles = Vec::with_capacity(paths.len());
+
+    for p in paths {
+        handles.push(tokio::task::spawn_blocking(move || calculate_sha1(&p)));
+    }
+
+    // Collect results
+    let mut hashes = Vec::with_capacity(handles.len());
+
+    for handle in handles {
+        match handle.await {
             Ok(Ok(hash)) => hashes.push(hash),
-
-            Ok(Err(error)) => eprintln!("Error processing hash: {error}"),
-
-            Err(error) => eprintln!("Task error: {error}"),
+            Ok(Err(e)) => eprintln!("Error processing hash: {e}"),
+            Err(e) => eprintln!("Task join error: {e}"),
         }
     }
 
-    // If there're no files
     if hashes.is_empty() {
         return Err("No valid entries found to calculate hashes".into());
     }
 
-    // Return hashes
+    println!("Done!");
+
     Ok(hashes)
 }
 
-/// Calculates hash for a file
-pub async fn calculate_sha1<P: AsRef<Path>>(path: P) -> io::Result<String> {
-    // Open the file
-    let mut file = tokio::fs::File::open(&path).await?;
-
-    // Create a hasher
+/// Synchronous SHA-1 calculation using a buffered reader (used inside spawn_blocking)
+fn calculate_sha1(path: &Path) -> std::io::Result<String> {
+    let f = File::open(path)?;
+    let mut reader = BufReader::with_capacity(64 * 1024, f); // 64 KiB buffer
     let mut hasher = Sha1::new();
+    let mut buf = [0u8; 64 * 1024];
 
-    // Create a buffer
-    let mut buffer = vec![0; 8192];
-
-    /*
-        A loop which reads bytes from the
-        file and appeands them to the hasher
-    */
     loop {
-        // Read to the buffer and count bytes count
-        let bytes_read = file.read(&mut buffer).await?;
-
-        // If bytes count equals zero
-        if bytes_read == 0 {
+        let n = reader.read(&mut buf)?;
+        if n == 0 {
             break;
         }
-
-        // Update the hasher
-        hasher.update(&buffer[..bytes_read]);
+        hasher.update(&buf[..n]);
     }
 
-    // Return result
+    // `finalize()`/format as hex — matches your original formatting.
     Ok(format!("{:x}", hasher.finalize()))
 }
 
@@ -134,7 +117,7 @@ pub async fn remove_mods_by_hash(
         // If it's a file
         if path.is_file() {
             // Get a hash
-            let file_hash = calculate_sha1(&path).await?;
+            let file_hash = calculate_sha1(&path)?;
 
             // If the hash in the hash list then remove a file
             if hashes_to_remove.contains(&&file_hash) {

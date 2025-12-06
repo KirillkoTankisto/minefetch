@@ -1,6 +1,6 @@
 // Internal modules
-use crate::HELP_MESSAGE;
-use crate::MFText;
+use crate::consts::HELP_MESSAGE;
+use crate::mfio::MFText;
 
 // Help message root
 pub struct Help {

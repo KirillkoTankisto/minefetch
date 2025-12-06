@@ -8,11 +8,7 @@
 */
 
 // Standard imports
-use std::path::Path;
 use std::result::Result;
-
-// External crates
-use serde_json::json;
 
 // Internal modules
 mod api;
@@ -24,14 +20,10 @@ mod mfio;
 mod profile;
 mod structs;
 mod utils;
-use api::*;
-use consts::*;
-use downloader::*;
-use helpmsg::display_help;
-use mfio::MFText;
-use structs::*;
 
-use front::*;
+use crate::consts::{NAME, PROGRAM_VERSION, USER_AGENT};
+use crate::front::*;
+use crate::helpmsg::display_help;
 
 #[tokio::main]
 // The start of the main function

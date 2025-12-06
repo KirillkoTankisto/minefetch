@@ -8,14 +8,13 @@
 */
 
 // Internal modules
-use crate::Hit;
 use crate::consts::USER_AGENT;
 use crate::downloader::download_multiple_mods;
-use crate::json;
 use crate::mfio::select;
 use crate::profile::{get_locks, remove_locked_ones, write_lock};
 use crate::structs::{
-    Dependency, File, Hash, MFHashMap, Project, ProjectList, Search, VersionsList, WorkingProfile,
+    Dependency, File, Hash, Hit, MFHashMap, Project, ProjectList, Search, VersionsList,
+    WorkingProfile,
 };
 use crate::utils::{get_hashes, remove_mods_by_hash};
 
@@ -23,6 +22,7 @@ use crate::utils::{get_hashes, remove_mods_by_hash};
 use reqwest::Client;
 use reqwest::Url;
 use serde_json::from_str;
+use serde_json::json;
 
 // Standard libraries
 use std::collections::HashMap;

@@ -1,21 +1,16 @@
-use crate::Anymod;
-use crate::MFText;
-use crate::Path;
-use crate::api::replace_mods;
-use crate::api::{get_dependencies, get_latest_version};
-use crate::download_multiple_mods;
-use crate::edit_mod;
-use crate::list_mods;
-use crate::mfio::parse_to_int;
-use crate::mfio::{ainput, press_enter, select};
-use crate::profile::*;
-use crate::search_mods;
-use crate::upgrade_mods;
-use crate::utils::*;
-use crate::{Config, Profile};
-
 use std::error::Error;
+use std::path::Path;
 use std::sync::Arc;
+
+use crate::api::{
+    Anymod, edit_mod, get_dependencies, get_latest_version, list_mods, replace_mods, search_mods,
+    upgrade_mods,
+};
+use crate::downloader::download_multiple_mods;
+use crate::mfio::{MFText, ainput, parse_to_int, press_enter, select};
+use crate::profile::{add_lock, build_working_profile, list_locks, read_full_config, remove_lock};
+use crate::structs::{Config, Profile};
+use crate::utils::{generate_hash, get_confdir, get_confpath, get_jar_filename};
 
 pub async fn add_mod(modname: &str) -> Result<(), Box<dyn Error>> {
     // Print text
@@ -315,6 +310,14 @@ pub async fn search(args: Vec<String>) -> Result<(), Box<dyn Error>> {
     let working_profile = build_working_profile().await?;
 
     /*
+    Get the current mods' list to compare with
+    versions that user will try to install. It's needed to
+    ensure that there won't be any duplicates of mods
+    */
+
+    let (size, mod_list) = list_mods(&working_profile).await.unwrap_or_default();
+
+    /*
         search_mods() prompts a user to select mods in menu.
         So, 'files' contains a list of mods to install.
     */
@@ -333,13 +336,6 @@ pub async fn search(args: Vec<String>) -> Result<(), Box<dyn Error>> {
     // Create a selected number list
     let numbers = parse_to_int(selected_string)?;
 
-    /*
-    Get the current mods' list to compare with
-    versions that user will try to install. It's needed to
-    ensure that there won't be any duplicates of mods
-    */
-    let (size, mod_list) = list_mods(&working_profile).await.unwrap_or_default();
-
     let mut versions: Vec<Anymod> = Vec::new();
 
     // Print the options
@@ -350,15 +346,23 @@ pub async fn search(args: Vec<String>) -> Result<(), Box<dyn Error>> {
             Some(version) => {
                 // If there're mods installed in the profile
                 if size != 0 {
+                    let mut installed: bool = false;
+
                     for anymod in &mod_list {
                         if anymod.project_id == version.project_id {
-                            eprintln!(":wrn: The mod {} is already installed, skipping", version.title);
+                            eprintln!(
+                                ":wrn: The mod {} is already installed, skipping",
+                                version.title
+                            );
+                            installed = true;
                             break;
                         }
                     }
-                    let project_id = &version.project_id;
-                    let version = get_latest_version(project_id, &working_profile).await?;
-                    versions.push(version);
+                    if !installed {
+                        let project_id = &version.project_id;
+                        let version = get_latest_version(project_id, &working_profile).await?;
+                        versions.push(version);
+                    }
                 }
             }
             None => return Err("The number is out of range".into()),
