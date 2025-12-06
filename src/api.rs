@@ -9,13 +9,12 @@
 
 // Internal modules
 use crate::consts::USER_AGENT;
-use crate::downloader::download_file;
+use crate::downloader::download_multiple_files;
 use crate::json;
 use crate::mfio::{ainput, parse_to_int, select};
 use crate::profile::{get_locks, remove_locked_ones, write_lock};
 use crate::structs::{
-    Dependency, Hash, MFHashMap, Project, ProjectList, Search, VersionsList,
-    WorkingProfile,
+    Dependency, Hash, MFHashMap, Project, ProjectList, Search, VersionsList, WorkingProfile,
 };
 use crate::utils::{get_hashes, remove_mods_by_hash};
 
@@ -92,8 +91,13 @@ pub async fn fetch_latest_version(
         .find(|file| file.primary)
         .ok_or("No primary file found")?;
 
-    let title = get_projects_name(&working_profile.client, vec![&version.project_id]).await?.first().unwrap().title.clone();
-    
+    let title = get_projects_name(&working_profile.client, vec![&version.project_id])
+        .await?
+        .first()
+        .unwrap()
+        .title
+        .clone();
+
     let anymod = Anymod {
         title: Some(title.clone()),
         project_id: version.project_id.clone(),
@@ -102,9 +106,9 @@ pub async fn fetch_latest_version(
         filename: file.filename.clone(),
         hash: file.hashes.sha1.clone(),
         url: file.url.clone(),
-        depends: version.dependencies.clone()
+        depends: version.dependencies.clone(),
     };
-    
+
     Ok(anymod)
 }
 
@@ -189,7 +193,7 @@ pub async fn search_mods(
             None => return Err("Cannot get such mod".into()),
         };
     }
-    
+
     // The list of mods to install
     let mut versions: Vec<Anymod> = Vec::new();
 
@@ -205,9 +209,7 @@ pub async fn search_mods(
 }
 
 /// Updates mods to the latest version
-pub async fn upgrade_mods(
-    working_profile: &WorkingProfile,
-) -> Result<Vec<Anymod>, Box<dyn Error>> {
+pub async fn upgrade_mods(working_profile: &WorkingProfile) -> Result<Vec<Anymod>, Box<dyn Error>> {
     // Get hashes from mods' directory
     let hashes = get_hashes(&working_profile.profile.modsfolder).await?;
 
@@ -304,7 +306,7 @@ pub async fn upgrade_mods(
                 filename: files.filename.clone(),
                 hash: files.hashes.sha1.clone(),
                 url: files.url.clone(),
-                depends: version.dependencies.clone()
+                depends: version.dependencies.clone(),
             };
             new_versions.push(anymod);
             hashes_to_remove.push(hash);
@@ -419,6 +421,8 @@ pub async fn list_mods(
         };
         end.push(anymod);
     }
+    
+    end.sort_by_key(|e| e.title.clone().unwrap_or_default());
 
     // Return the list and its length
     Ok((end.len(), end))
@@ -557,8 +561,8 @@ pub async fn edit_mod(working_profile: &WorkingProfile) -> Result<(), Box<dyn Er
         menu.push((
             format!(
                 "{} ({})",
-                modinfo.version_name, // Version name
-                modinfo.filename      // Version filename
+                modinfo.title.as_ref().unwrap(), // Version name
+                modinfo.filename                 // Version filename
             ),
             modinfo, // What the program sees
         ));
@@ -580,7 +584,7 @@ pub async fn edit_mod(working_profile: &WorkingProfile) -> Result<(), Box<dyn Er
     ];
 
     // Parse the response
-    let parsed = list_versions(working_profile, mod_to_edit.project_id, params).await?;
+    let parsed = list_versions(working_profile, mod_to_edit.project_id.clone(), params).await?;
 
     /*
         Create a list of available versions.
@@ -608,27 +612,12 @@ pub async fn edit_mod(working_profile: &WorkingProfile) -> Result<(), Box<dyn Er
         return Err("This mod is already installed".into());
     }
 
-    // Download the selected mod version
-    download_file(
-        &working_profile.profile.modsfolder,
-        &version_to_install.filename,
-        &version_to_install.url,
-        &working_profile.client,
+    replace_mods(
+        vec![mod_to_edit],
+        vec![version_to_install.clone()],
+        working_profile,
     )
     .await?;
-
-    // Print the text
-    println!(":out: Downloaded {}", &version_to_install.filename);
-
-    // Delete the old mod
-    remove_mods_by_hash(
-        &working_profile.profile.modsfolder,
-        &vec![&mod_to_edit.hash],
-    )
-    .await?;
-
-    // Print the text
-    println!(":out: Deleted {}", &mod_to_edit.filename);
 
     // Create a yes / no dialog (lock the mod or not)
     let lock_menu = vec![("Yes".to_string(), true), ("No".to_string(), false)];
@@ -639,5 +628,28 @@ pub async fn edit_mod(working_profile: &WorkingProfile) -> Result<(), Box<dyn Er
     }
 
     // Success
+    Ok(())
+}
+
+pub async fn replace_mods(
+    original_mods: Vec<Anymod>,
+    new_mods: Vec<Anymod>,
+    working_profile: &WorkingProfile,
+) -> Result<(), Box<dyn Error>> {
+    // Download the new ones
+    download_multiple_files(
+        new_mods,
+        &working_profile.profile.modsfolder,
+        &working_profile.client,
+    )
+    .await?;
+
+    // Remove the old mods
+    remove_mods_by_hash(
+        &working_profile.profile.modsfolder,
+        &original_mods.iter().map(|fmod| &fmod.hash).collect(),
+    )
+    .await?;
+
     Ok(())
 }
