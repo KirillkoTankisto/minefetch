@@ -8,23 +8,50 @@
 */
 
 // Internal modules
+use crate::Hit;
 use crate::consts::USER_AGENT;
-use crate::downloader::download_multiple_files;
+use crate::downloader::download_multiple_mods;
 use crate::json;
-use crate::mfio::{ainput, parse_to_int, select};
+use crate::mfio::select;
 use crate::profile::{get_locks, remove_locked_ones, write_lock};
 use crate::structs::{
-    Dependency, Hash, MFHashMap, Project, ProjectList, Search, VersionsList, WorkingProfile,
+    Dependency, File, Hash, MFHashMap, Project, ProjectList, Search, VersionsList, WorkingProfile,
 };
 use crate::utils::{get_hashes, remove_mods_by_hash};
 
 // External crates
 use reqwest::Client;
+use reqwest::Url;
+use serde_json::from_str;
+
+// Standard libraries
 use std::collections::HashMap;
 use std::error::Error;
+use std::sync::Arc;
 
-/// Returns filename, URL, and optional dependencies.
-pub async fn fetch_latest_version(
+#[derive(Clone)]
+pub struct Anymod {
+    pub title: Option<String>,
+    pub project_id: String,
+    pub version_name: String,
+    pub version_id: String,
+    pub filename: String,
+    pub hash: String,
+    pub url: String,
+    pub depends: Option<Vec<Dependency>>,
+}
+
+pub fn get_primary(files: &Vec<File>) -> Result<File, Box<dyn Error>> {
+    let file = files
+        .iter()
+        .find(|file| file.primary)
+        .ok_or("Couldn't get the primary file")?;
+
+    Ok(file.clone())
+}
+
+/// Gets the latest version of the mod by slug or id
+pub async fn get_latest_version(
     modname: &String,
     working_profile: &WorkingProfile,
 ) -> Result<Anymod, Box<dyn std::error::Error>> {
@@ -41,7 +68,7 @@ pub async fn fetch_latest_version(
     ];
 
     // Construct the URL with parameters.
-    let url = reqwest::Url::parse_with_params(
+    let url = Url::parse_with_params(
         &format!("https://api.modrinth.com/v2/project/{}/version", modname),
         params,
     )?;
@@ -57,44 +84,29 @@ pub async fn fetch_latest_version(
         .await?;
 
     // Parse the response.
-    let parsed: VersionsList =
-        serde_json::from_str(&response).map_err(|_| "Cannot find such mod")?;
+    let parsed: VersionsList = from_str(&response).map_err(|_| "Cannot find such mod")?;
 
     // Get the first version.
     let version = parsed.get(0).ok_or("No versions available")?;
 
     // Search for locks
-    let locks = match get_locks(&working_profile.profile).await {
-        Ok(locks) => locks,
-        Err(_) => Vec::new(),
-    };
+    let locks = get_locks(&working_profile.profile)
+        .await
+        .unwrap_or_default();
+
+    let file = get_primary(&version.files)?;
 
     // Check if this mod is in locks or not
     for lock in locks {
-        if version
-            .files
-            .iter()
-            .find(|file| file.primary)
-            .unwrap()
-            .hashes
-            .sha1
-            == lock
-        {
+        if file.hashes.sha1 == lock {
             return Err("This mod is locked".into());
         }
     }
 
-    // Get the primary file.
-    let file = version
-        .files
-        .iter()
-        .find(|file| file.primary)
-        .ok_or("No primary file found")?;
-
     let title = get_projects_name(&working_profile.client, vec![&version.project_id])
         .await?
         .first()
-        .unwrap()
+        .ok_or("The project list is empty")?
         .title
         .clone();
 
@@ -116,14 +128,7 @@ pub async fn fetch_latest_version(
 pub async fn search_mods(
     query: &str,
     working_profile: &WorkingProfile,
-) -> Result<Vec<Anymod>, Box<dyn Error>> {
-    /*
-    Get the current mods' list to compare with
-    versions that user will try to install. It's needed to
-    ensure that there won't be any duplicates of mods
-    */
-    let mod_list = list_mods(&working_profile).await.unwrap_or_default();
-
+) -> Result<Vec<Hit>, Box<dyn Error>> {
     // Set facets
     let facets = json!([
         [format!("categories:{}", working_profile.profile.loader)],
@@ -135,7 +140,7 @@ pub async fn search_mods(
     let params: &[(&str, &str)] = &[("query", &query), ("facets", &facets.to_string())];
 
     // Parse the URL
-    let url = reqwest::Url::parse_with_params("https://api.modrinth.com/v2/search", params)?;
+    let url = Url::parse_with_params("https://api.modrinth.com/v2/search", params)?;
 
     // Send the request
     let response = working_profile
@@ -148,68 +153,20 @@ pub async fn search_mods(
         .await?;
 
     // Parse the response
-    let parsed: Search = serde_json::from_str(&response)?;
+    let parsed: Search = from_str(&response)?;
 
     // Check if there's no hits
     if parsed.hits.is_empty() {
         return Err("No hits".into());
     }
 
-    // Print all hits
-    for number in (0..parsed.hits.len()).rev() {
-        if let Some(hit) = parsed.hits.get(number) {
-            println!("[{}] {}", number + 1, hit.title);
-        }
-    }
-
-    // Parse the user input
-    let selected_string = ainput(":out: Select mods to install: ").await?;
-
-    // Create a selected number list
-    let numbers = parse_to_int(selected_string)?;
-
-    // Set the counter
-    let mut counter: usize = 1;
-
-    // Print the options
-    for number in &numbers {
-        // Get a git by its number in the list
-        match parsed.hits.get(*number) {
-            // If it's in the range
-            Some(version) => {
-                // If there're mods installed in the profile
-                if mod_list.0 != 0 {
-                    for hashmap in &mod_list.1 {
-                        if hashmap.project_id == version.project_id {
-                            return Err(
-                                format!("The mod {} is already installed", version.title).into()
-                            );
-                        }
-                    }
-                }
-                println!("[{}] {}", counter, version.title);
-                counter += 1;
-            }
-            None => return Err("Cannot get such mod".into()),
-        };
-    }
-
-    // The list of mods to install
-    let mut versions: Vec<Anymod> = Vec::new();
-
-    // Create a version list using selected or latest versions
-    for number in numbers {
-        let hit = parsed.hits.get(number).ok_or("Cannot get such mod")?;
-        let project_id = &hit.project_id;
-        let version = fetch_latest_version(project_id, working_profile).await?;
-        versions.push(version);
-    }
-
-    Ok(versions)
+    Ok(parsed.hits)
 }
 
 /// Updates mods to the latest version
-pub async fn upgrade_mods(working_profile: &WorkingProfile) -> Result<Vec<Anymod>, Box<dyn Error>> {
+pub async fn upgrade_mods(
+    working_profile: &WorkingProfile,
+) -> Result<(Vec<String>, Vec<Anymod>), Box<dyn Error>> {
     // Get hashes from mods' directory
     let hashes = get_hashes(&working_profile.profile.modsfolder).await?;
 
@@ -268,20 +225,9 @@ pub async fn upgrade_mods(working_profile: &WorkingProfile) -> Result<Vec<Anymod
         It's needed to filter out the mods that weren't updated.
     */
 
-    let keys_to_remove: Vec<_> = versions
+    let keys_to_remove: Vec<String> = versions
         .iter()
-        .filter_map(|(_, version)| {
-            version
-                .files
-                .iter()
-                .find(|file| file.primary)
-                .and_then(|file| {
-                    hashes
-                        .hashes
-                        .contains(&file.hashes.sha1)
-                        .then(|| file.hashes.sha1.clone())
-                })
-        })
+        .map(|(_, b)| get_primary(&b.files).unwrap().hashes.sha1)
         .collect();
 
     // Remove the hashes that were found above
@@ -289,15 +235,13 @@ pub async fn upgrade_mods(working_profile: &WorkingProfile) -> Result<Vec<Anymod
         versions.remove(key);
     }
 
-    // Create a list of updated versions
     let mut new_versions: Vec<Anymod> = Vec::new();
 
-    // Create a list of hashes to remove (outdated mods)
-    let mut hashes_to_remove = Vec::new();
+    let mut old_versions: Vec<String> = Vec::new();
 
-    // Fill the 'new_versions' and 'hashes_to_remove' lists
+    // Fill the 'new_versions' and 'old_versions' lists
     for (hash, version) in versions {
-        if let Some(files) = version.files.iter().find(|file| file.primary) {
+        if let Some(files) = Some(get_primary(&version.files)?) {
             let anymod = Anymod {
                 title: None,
                 project_id: version.project_id.clone(),
@@ -309,29 +253,12 @@ pub async fn upgrade_mods(working_profile: &WorkingProfile) -> Result<Vec<Anymod
                 depends: version.dependencies.clone(),
             };
             new_versions.push(anymod);
-            hashes_to_remove.push(hash);
+            old_versions.push(hash.clone());
         }
     }
 
-    // If there're mods that have been changed / updated
-    if hashes_to_remove.len() != 0 {
-        remove_mods_by_hash(&working_profile.profile.modsfolder, &hashes_to_remove).await?;
-    };
-
     // Return the list (it can be empty)
-    Ok(new_versions)
-}
-
-#[derive(Clone)]
-pub struct Anymod {
-    pub title: Option<String>,
-    pub project_id: String,
-    pub version_name: String,
-    pub version_id: String,
-    pub filename: String,
-    pub hash: String,
-    pub url: String,
-    pub depends: Option<Vec<Dependency>>,
+    Ok((old_versions, new_versions))
 }
 
 /// Lists mods in selected profile
@@ -421,7 +348,7 @@ pub async fn list_mods(
         };
         end.push(anymod);
     }
-    
+
     end.sort_by_key(|e| e.title.clone().unwrap_or_default());
 
     // Return the list and its length
@@ -524,11 +451,7 @@ pub async fn list_versions(
         .clone();
     let project_id = versions.first().unwrap().project_id.clone();
     for version in versions {
-        let file = version
-            .files
-            .iter()
-            .find(|file| file.primary)
-            .ok_or("Couldn't find the primary file")?;
+        let file = get_primary(&version.files)?;
         let anymod = Anymod {
             title: Some(title.clone()),
             project_id: project_id.clone(),
@@ -613,7 +536,7 @@ pub async fn edit_mod(working_profile: &WorkingProfile) -> Result<(), Box<dyn Er
     }
 
     replace_mods(
-        vec![mod_to_edit],
+        vec![&mod_to_edit.hash],
         vec![version_to_install.clone()],
         working_profile,
     )
@@ -632,24 +555,15 @@ pub async fn edit_mod(working_profile: &WorkingProfile) -> Result<(), Box<dyn Er
 }
 
 pub async fn replace_mods(
-    original_mods: Vec<Anymod>,
+    old_hashes: Vec<&String>,
     new_mods: Vec<Anymod>,
     working_profile: &WorkingProfile,
 ) -> Result<(), Box<dyn Error>> {
     // Download the new ones
-    download_multiple_files(
-        new_mods,
-        &working_profile.profile.modsfolder,
-        &working_profile.client,
-    )
-    .await?;
+    download_multiple_mods(new_mods, Arc::new(working_profile.clone())).await?;
 
     // Remove the old mods
-    remove_mods_by_hash(
-        &working_profile.profile.modsfolder,
-        &original_mods.iter().map(|fmod| &fmod.hash).collect(),
-    )
-    .await?;
+    remove_mods_by_hash(&working_profile.profile.modsfolder, &old_hashes).await?;
 
     Ok(())
 }

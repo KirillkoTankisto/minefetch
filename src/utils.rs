@@ -39,9 +39,7 @@ pub async fn generate_hash() -> Result<String, Box<dyn std::error::Error>> {
 }
 
 /// Returns Vec<String> of hashes in given path
-pub async fn get_hashes(
-    path: &str,
-) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+pub async fn get_hashes(path: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     // Get files from path
     let mut entries = match tokio::fs::read_dir(path).await {
         Ok(entries) => entries,
@@ -169,7 +167,7 @@ pub async fn get_jar_filename(entry: &DirEntry) -> Option<String> {
 /// Gets a home folder (Not sure if it works for windows)
 pub async fn get_homedir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let homedir = env::home_dir().ok_or("Can't get the home directory")?;
-    
+
     Ok(homedir)
 }
 

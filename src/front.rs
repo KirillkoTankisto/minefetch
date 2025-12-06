@@ -1,10 +1,12 @@
+use crate::Anymod;
 use crate::MFText;
 use crate::Path;
-use crate::api::{fetch_latest_version, get_dependencies};
-use crate::download_multiple_files;
-use crate::downloader::download_file;
+use crate::api::replace_mods;
+use crate::api::{get_dependencies, get_latest_version};
+use crate::download_multiple_mods;
 use crate::edit_mod;
 use crate::list_mods;
+use crate::mfio::parse_to_int;
 use crate::mfio::{ainput, press_enter, select};
 use crate::profile::*;
 use crate::search_mods;
@@ -13,6 +15,7 @@ use crate::utils::*;
 use crate::{Config, Profile};
 
 use std::error::Error;
+use std::sync::Arc;
 
 pub async fn add_mod(modname: &str) -> Result<(), Box<dyn Error>> {
     // Print text
@@ -22,19 +25,34 @@ pub async fn add_mod(modname: &str) -> Result<(), Box<dyn Error>> {
     let working_profile = build_working_profile().await?;
 
     // Get the latest version
-    let mod_version = fetch_latest_version(&modname.to_string(), &working_profile).await?;
+    let mod_version = get_latest_version(&modname.to_string(), &working_profile).await?;
+
+    let mod_list = list_mods(&working_profile).await?;
+
+    for anymod in mod_list.1 {
+        if anymod.hash == mod_version.hash {
+            return Err(format!(
+                "The mod {} is already installed",
+                mod_version.title.as_ref().ok_or("No title")?
+            )
+            .into());
+        }
+    }
 
     // Download this version
-    download_file(
-        &working_profile.profile.modsfolder,
-        &mod_version.filename,
-        &mod_version.url,
-        &working_profile.client,
+    replace_mods(
+        vec![&mod_version.hash],
+        vec![mod_version.clone()],
+        &working_profile,
     )
     .await?;
 
     // Print text
-    println!(":out: Downloaded {} ({})", &mod_version.title.unwrap(), &mod_version.filename);
+    println!(
+        ":out: Downloaded {} ({})",
+        &mod_version.title.unwrap(),
+        &mod_version.filename
+    );
 
     // Check for existing dependencies
     match mod_version.depends {
@@ -300,15 +318,55 @@ pub async fn search(args: Vec<String>) -> Result<(), Box<dyn Error>> {
         search_mods() prompts a user to select mods in menu.
         So, 'files' contains a list of mods to install.
     */
-    let files = search_mods(&query, &working_profile).await?;
+    let hits = search_mods(&query, &working_profile).await?;
+
+    // Print all hits
+    for number in (0..hits.len()).rev() {
+        if let Some(hit) = hits.get(number) {
+            println!("[{}] {}", number + 1, hit.title);
+        }
+    }
+
+    // Parse the user input
+    let selected_string = ainput(":out: Select mods to install: ").await?;
+
+    // Create a selected number list
+    let numbers = parse_to_int(selected_string)?;
+
+    /*
+    Get the current mods' list to compare with
+    versions that user will try to install. It's needed to
+    ensure that there won't be any duplicates of mods
+    */
+    let (size, mod_list) = list_mods(&working_profile).await.unwrap_or_default();
+
+    let mut versions: Vec<Anymod> = Vec::new();
+
+    // Print the options
+    for number in &numbers {
+        // Get a git by its number in the list
+        match hits.get(*number) {
+            // If it's in the range
+            Some(version) => {
+                // If there're mods installed in the profile
+                if size != 0 {
+                    for anymod in &mod_list {
+                        if anymod.project_id == version.project_id {
+                            eprintln!(":wrn: The mod {} is already installed, skipping", version.title);
+                            break;
+                        }
+                    }
+                    let project_id = &version.project_id;
+                    let version = get_latest_version(project_id, &working_profile).await?;
+                    versions.push(version);
+                }
+            }
+            None => return Err("The number is out of range".into()),
+        };
+    }
 
     // Download 'files'
-    download_multiple_files(
-        files,
-        &working_profile.profile.modsfolder,
-        &working_profile.client,
-    )
-    .await?;
+    download_multiple_mods(versions, Arc::new(working_profile.clone())).await?;
 
     Ok(())
 }
@@ -318,19 +376,19 @@ pub async fn upgrade() -> Result<(), Box<dyn Error>> {
     let working_profile = build_working_profile().await?;
 
     // Returns a list of new files of mods to install
-    let files = upgrade_mods(&working_profile).await?;
+    let (old_mods, new_mods) = upgrade_mods(&working_profile).await?;
 
     // If empty then there're no mods to update
-    if files.len() == 0 {
+    if new_mods.len() == 0 {
         println!(":out: All mods are up to date!");
         return Ok(());
     }
 
     // Download 'files'
-    download_multiple_files(
-        files,
-        &working_profile.profile.modsfolder,
-        &working_profile.client,
+    replace_mods(
+        old_mods.iter().map(|hash| hash).collect(),
+        new_mods,
+        &working_profile,
     )
     .await?;
 

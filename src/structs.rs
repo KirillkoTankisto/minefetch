@@ -65,7 +65,7 @@ impl Default for Config {
 }
 
 /// Profile structure
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Profile {
     pub active: bool,
     pub name: String,
@@ -122,6 +122,7 @@ pub struct Locks {
 
 /// Working profile structure
 /// (Profile and Client)
+#[derive(Clone)]
 pub struct WorkingProfile {
     pub profile: Profile,
     pub client: Client,

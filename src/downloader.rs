@@ -8,34 +8,36 @@
 */
 
 // Internal modules
-use crate::consts::USER_AGENT;
-use crate::get_dependencies;
 use crate::Anymod;
+use crate::consts::USER_AGENT;
+use crate::structs::WorkingProfile;
 
 // Standard imports
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::result::Result;
 
 // External crates
-use reqwest::Client;
+use futures::future::join_all;
+use std::sync::Arc;
+use tokio::fs::create_dir_all;
 use tokio::io::AsyncWriteExt;
+use tokio::task::JoinHandle;
 
 /// Downloads a single file
-pub async fn download_file(
-    path: &str,
-    filename: &str,
-    url: &str,
-    client: &Client,
+pub async fn download_mod(
+    anymod: &Anymod,
+    working_profile: &WorkingProfile,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Create a destination directory if it doesn't exist
-    tokio::fs::create_dir_all(path).await?;
+    create_dir_all(&working_profile.profile.modsfolder).await?;
 
     // Create a file path
-    let path = std::path::Path::new(path).join(&filename);
+    let path = Path::new(&working_profile.profile.modsfolder).join(&anymod.filename);
 
     // Send the download request
-    let mut response = client
-        .get(url)
+    let mut response = working_profile
+        .client
+        .get(&anymod.url)
         .header("User-Agent", USER_AGENT)
         .send()
         .await?;
@@ -53,82 +55,24 @@ pub async fn download_file(
 }
 
 /// Downloads multiple files
-pub async fn download_multiple_files(
+pub async fn download_multiple_mods(
     files: Vec<Anymod>,
-    path: &str,
-    client: &Client,
+    working_profile: Arc<WorkingProfile>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Tasks' list
-    let mut handles = Vec::new();
+    let mut tasks: Vec<JoinHandle<Result<(), ()>>> = vec![];
 
-    // Destination path
-    let base_path = Path::new(path);
-
-    // Going through all files that must be downloaded
     for file in files {
-        // Copy the client
-        let client_download = client.clone();
-        let client_dependencies = client.clone();
-
-        // Get the path
-        let sanitized_path = PathBuf::from(base_path);
-
-        // Check if this path safe (inside base_path)
-        if !sanitized_path.starts_with(base_path) {
-            eprintln!(
-                ":err: Potential path traversal attack detected: {:?}",
-                sanitized_path
-            );
-            continue;
-        }
-
-        // Create a task
-        let handle = tokio::spawn(async move {
-            // Print the text
-            println!(":out: Downloading {}", &file.filename);
-
-            // Convert path to &str
-            let path_str = match sanitized_path.to_str() {
-                Some(path) => path,
-                None => {
-                    eprintln!(":err: Invalid UTF-8 path for {}", &file.filename);
-                    return; // Exit the task early
-                }
-            };
-
-            // Download a file
-            match download_file(path_str, &file.filename, &file.url, &client_download).await {
+        let wp = working_profile.clone();
+        tasks.push(tokio::spawn(async move {
+            match download_mod(&file, &wp).await {
                 Ok(_) => {}
-                Err(error) => {
-                    eprintln!(":err: Failed to download {}: {}", &file.filename, error)
-                }
+                Err(e) => eprintln!(":err: {e}"),
             }
-        });
-
-        // Check if the mod has any dependencies
-        match &file.depends {
-            Some(dep) => {
-                // Get a list of dependencies
-                let list = get_dependencies(&dep, &client_dependencies).await?;
-
-                // Print the list
-                for dependency in list {
-                    println!(":dep: {} {}", dependency.0, dependency.1);
-                }
-            }
-            None => {}
-        }
-
-        // Append to the tasks' list
-        handles.push(handle);
+            Ok(())
+        }));
     }
 
-    // Execute the tasks
-    for handle in handles {
-        if let Err(error) = handle.await {
-            eprintln!(":err: Task panicked: {:?}", error);
-        }
-    }
+    join_all(tasks).await;
 
     // Success
     Ok(())

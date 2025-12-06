@@ -58,9 +58,7 @@ pub async fn read_full_config() -> Result<Config, Box<dyn std::error::Error>> {
 }
 
 /// Gets a list of locks
-pub async fn get_locks(
-    profile: &Profile,
-) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+pub async fn get_locks(profile: &Profile) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     // Get a lock path
     let locks_path = get_locks_path(profile);
 
@@ -85,9 +83,7 @@ pub async fn get_locks(
 }
 
 /// Adds a lock
-pub async fn add_lock(
-    working_profile: &WorkingProfile,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn add_lock(working_profile: &WorkingProfile) -> Result<(), Box<dyn std::error::Error>> {
     // Get a mod list
     let (_, versions) = list_mods(&working_profile).await?;
 
@@ -110,10 +106,7 @@ pub async fn add_lock(
 }
 
 /// Writes a new lock into the file
-pub async fn write_lock(
-    profile: &Profile,
-    hash: String,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn write_lock(profile: &Profile, hash: String) -> Result<(), Box<dyn std::error::Error>> {
     // Get a mutable lock list
     let mut locks = match get_locks(&profile).await {
         Ok(locks) => locks,
@@ -171,7 +164,10 @@ pub async fn remove_lock(
         };
 
         // Push the info into lock menu
-        lockmenu.push((format!("{} ({})", name.unwrap(), filename), lock.to_string()));
+        lockmenu.push((
+            format!("{} ({})", name.unwrap(), filename),
+            lock.to_string(),
+        ));
     }
 
     // Choose a hash
@@ -274,8 +270,7 @@ pub async fn list_locks(
 }
 
 /// Creates a WorkingProfile which contains a Client and a Profile
-pub async fn build_working_profile()
--> Result<WorkingProfile, Box<dyn std::error::Error>> {
+pub async fn build_working_profile() -> Result<WorkingProfile, Box<dyn std::error::Error>> {
     // Read the profile
     let profile = read_config().await?;
 
