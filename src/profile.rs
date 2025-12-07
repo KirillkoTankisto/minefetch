@@ -14,8 +14,8 @@ use std::result::Result;
 // External crates
 use reqwest::Client;
 
+use crate::cache::list_mods_cached;
 // Internal imports
-use crate::api::list_mods;
 use crate::mfio::select;
 use crate::structs::{Config, Locks, MFHashMap, Profile, WorkingProfile};
 use crate::utils::get_confpath;
@@ -85,7 +85,7 @@ pub async fn get_locks(profile: &Profile) -> Result<Vec<String>, Box<dyn std::er
 /// Adds a lock
 pub async fn add_lock(working_profile: &WorkingProfile) -> Result<(), Box<dyn std::error::Error>> {
     // Get a mod list
-    let (_, versions) = list_mods(&working_profile).await?;
+    let versions = list_mods_cached(&working_profile).await?;
 
     // Create a mutable mod menu
     let mut modmenu: Vec<(String, String)> = Vec::new();
@@ -140,7 +140,7 @@ pub async fn remove_lock(
     let mut lockmenu: Vec<(String, String)> = Vec::new();
 
     // Get a mod list
-    let (_, mods) = list_mods(&working_profile).await?;
+    let mods = list_mods_cached(&working_profile).await?;
 
     /*
         Go through all locks and get an
@@ -229,7 +229,7 @@ pub async fn list_locks(
     let locks = get_locks(&working_profile.profile).await?;
 
     // Get a mods' list
-    let (_, mods) = list_mods(&working_profile).await?;
+    let mods = list_mods_cached(&working_profile).await?;
 
     // Set the counter
     let mut counter: usize = 1;

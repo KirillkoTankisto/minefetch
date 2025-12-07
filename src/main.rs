@@ -20,6 +20,7 @@ mod mfio;
 mod profile;
 mod structs;
 mod utils;
+mod cache;
 
 use crate::consts::{NAME, PROGRAM_VERSION, USER_AGENT};
 use crate::front::*;
@@ -100,7 +101,7 @@ async fn initialise() -> Result<(), Box<dyn std::error::Error>> {
         Some("upgrade") | Some("update") => upgrade().await?,
 
         // minefetch list
-        Some("list") => list().await?,
+        Some("list") => list_cached().await?,
 
         // minefetch lock %subcommand%
         Some("lock") => match args.get(2).map(String::as_str) {

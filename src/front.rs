@@ -6,11 +6,12 @@ use crate::api::{
     Anymod, edit_mod, get_dependencies, get_latest_version, list_mods, replace_mods, search_mods,
     upgrade_mods,
 };
+use crate::cache::list_mods_cached;
 use crate::downloader::download_multiple_mods;
 use crate::mfio::{MFText, ainput, parse_to_int, press_enter, select};
 use crate::profile::{add_lock, build_working_profile, list_locks, read_full_config, remove_lock};
 use crate::structs::{Config, Profile};
-use crate::utils::{generate_hash, get_confdir, get_confpath, get_jar_filename};
+use crate::utils::{generate_hash, get_confdir, get_confpath};
 
 pub async fn add_mod(modname: &str) -> Result<(), Box<dyn Error>> {
     // Print text
@@ -22,9 +23,9 @@ pub async fn add_mod(modname: &str) -> Result<(), Box<dyn Error>> {
     // Get the latest version
     let mod_version = get_latest_version(&modname.to_string(), &working_profile).await?;
 
-    let mod_list = list_mods(&working_profile).await?;
+    let mod_list = list_mods_cached(&working_profile).await?;
 
-    for anymod in mod_list.1 {
+    for anymod in mod_list {
         if anymod.hash == mod_version.hash {
             return Err(format!(
                 "The mod {} is already installed",
@@ -315,7 +316,7 @@ pub async fn search(args: Vec<String>) -> Result<(), Box<dyn Error>> {
     ensure that there won't be any duplicates of mods
     */
 
-    let (size, mod_list) = list_mods(&working_profile).await.unwrap_or_default();
+    let mod_list = list_mods(&working_profile).await.unwrap_or_default();
 
     /*
         search_mods() prompts a user to select mods in menu.
@@ -337,6 +338,8 @@ pub async fn search(args: Vec<String>) -> Result<(), Box<dyn Error>> {
     let numbers = parse_to_int(selected_string)?;
 
     let mut versions: Vec<Anymod> = Vec::new();
+
+    let size = mod_list.len();
 
     // Print the options
     for number in &numbers {
@@ -399,71 +402,33 @@ pub async fn upgrade() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub async fn list() -> Result<(), Box<dyn Error>> {
-    // Create a working profile
+pub async fn list_cached() -> Result<(), Box<dyn Error>> {
     let working_profile = build_working_profile().await?;
 
-    /*
-        'match' is used here because if there's some
-        error like a problem with internet connection then
-        the program must output the list using only local data
-    */
-    match list_mods(&working_profile).await {
-        Ok((size, versions)) => {
-            // If there're no mods in the profile
-            if size == 0 {
-                return Err("There are no mods yet".into());
-            }
+    let mods = list_mods_cached(&working_profile).await?;
+    let size = mods.len();
 
-            // Print text
-            println!(
-                ":out: There are {}{}{} mods in profile {}:",
-                MFText::Bold,
-                size,
-                MFText::Reset,
-                working_profile.profile.name
-            );
+    // Print text
+    println!(
+        ":out: There are {}{}{} mods in profile {}:",
+        MFText::Bold,
+        size,
+        MFText::Reset,
+        working_profile.profile.name
+    );
 
-            for (num, anymod) in versions.iter().enumerate() {
-                println!(
-                    "[{}{}{}] {}{}{} ({})",
-                    MFText::Bold,
-                    num + 1,
-                    MFText::Reset,
-                    MFText::Bold,
-                    anymod.title.clone().unwrap_or_default(),
-                    MFText::Reset,
-                    anymod.filename,
-                );
-            }
-        }
-        // If there's some error then try to display mods' list locally
-        Err(error) => {
-            // Print the error
-            eprintln!(":err: {}", error);
-
-            // Get a mods' folder
-            let path = Path::new(&working_profile.profile.modsfolder);
-
-            // Read the dir
-            let mut entries = tokio::fs::read_dir(path).await?;
-
-            // Set the counter
-            let mut counter: usize = 1;
-
-            // Go through files in the dir
-            while let Some(entry) = entries.next_entry().await? {
-                // Get the filename if the file has a .jar extension
-                if let Some(filename) = get_jar_filename(&entry).await {
-                    // Print filename
-                    println!("[{}] {}", counter, filename);
-
-                    // Increase the counter
-                    counter += 1;
-                }
-            }
-        }
-    };
+    for (num, anymod) in mods.iter().enumerate() {
+        println!(
+            "[{}{}{}] {}{}{} ({})",
+            MFText::Bold,
+            num + 1,
+            MFText::Reset,
+            MFText::Bold,
+            anymod.title.clone().unwrap_or_default(),
+            MFText::Reset,
+            anymod.filename,
+        );
+    }
 
     Ok(())
 }

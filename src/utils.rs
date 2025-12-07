@@ -20,7 +20,7 @@ use std::result::Result;
 use rand::Rng;
 use rand::distr::Alphanumeric;
 use sha1::{Digest, Sha1};
-use tokio::fs::DirEntry;
+use tokio::task::spawn_blocking;
 
 /// Generates random 64 char string
 pub async fn generate_hash() -> Result<String, Box<dyn std::error::Error>> {
@@ -59,7 +59,9 @@ pub async fn get_hashes(path: &str) -> Result<Vec<String>, Box<dyn std::error::E
     let mut handles = Vec::with_capacity(paths.len());
 
     for p in paths {
-        handles.push(tokio::task::spawn_blocking(move || calculate_sha1(&p)));
+        if p.extension().unwrap_or_default() == "jar" {
+            handles.push(spawn_blocking(move || calculate_sha1(&p)));
+        }
     }
 
     // Collect results
@@ -76,8 +78,6 @@ pub async fn get_hashes(path: &str) -> Result<Vec<String>, Box<dyn std::error::E
     if hashes.is_empty() {
         return Err("No valid entries found to calculate hashes".into());
     }
-
-    println!("Done!");
 
     Ok(hashes)
 }
@@ -128,23 +128,6 @@ pub async fn remove_mods_by_hash(
 
     // Success
     Ok(())
-}
-
-/// Gets a filename of the file if it's a .jar file
-pub async fn get_jar_filename(entry: &DirEntry) -> Option<String> {
-    // Get a path
-    let path = entry.path();
-
-    // If it's a file and it has a .jar extension then return a String
-    if path.is_file() && path.extension().and_then(|extension| extension.to_str()) == Some("jar") {
-        return path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .map(String::from);
-    }
-
-    // If not then return nothing
-    None
 }
 
 /// Gets a home folder (Not sure if it works for windows)

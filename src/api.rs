@@ -7,6 +7,7 @@
 
 */
 
+use crate::cache::list_mods_cached;
 // Internal modules
 use crate::consts::USER_AGENT;
 use crate::downloader::download_multiple_mods;
@@ -21,6 +22,7 @@ use crate::utils::{get_hashes, remove_mods_by_hash};
 // External crates
 use reqwest::Client;
 use reqwest::Url;
+use serde::{Deserialize, Serialize};
 use serde_json::from_str;
 use serde_json::json;
 
@@ -29,7 +31,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Anymod {
     pub title: Option<String>,
     pub project_id: String,
@@ -264,7 +266,7 @@ pub async fn upgrade_mods(
 /// Lists mods in selected profile
 pub async fn list_mods(
     working_profile: &WorkingProfile,
-) -> Result<(usize, Vec<Anymod>), Box<dyn std::error::Error>> {
+) -> Result<Vec<Anymod>, Box<dyn std::error::Error>> {
     // Get the hashes
     let hashes = Hash {
         hashes: match get_hashes(&working_profile.profile.modsfolder).await {
@@ -352,7 +354,7 @@ pub async fn list_mods(
     end.sort_by_key(|e| e.title.clone().unwrap_or_default());
 
     // Return the list and its length
-    Ok((end.len(), end))
+    Ok(end)
 }
 
 /// Returns mod's dependencies
@@ -471,7 +473,7 @@ pub async fn list_versions(
 /// Edits a mod
 pub async fn edit_mod(working_profile: &WorkingProfile) -> Result<(), Box<dyn Error>> {
     // Get the current mod list
-    let modlist = list_mods(working_profile).await?;
+    let modlist = list_mods_cached(working_profile).await?;
 
     /*
         Create a list for a select() function
@@ -480,7 +482,7 @@ pub async fn edit_mod(working_profile: &WorkingProfile) -> Result<(), Box<dyn Er
     let mut menu: Vec<(String, Anymod)> = Vec::new();
 
     // Push mods into the 'menu' list
-    for modinfo in modlist.1 {
+    for modinfo in modlist {
         menu.push((
             format!(
                 "{} ({})",

@@ -108,7 +108,7 @@ pub struct Hash {
 }
 
 /// Dependency structure (project id and dependency type)
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct Dependency {
     pub project_id: String,
     pub dependency_type: String,
