@@ -1,12 +1,13 @@
+// Standard libraries
 use std::error::Error;
 use std::path::Path;
 use std::sync::Arc;
 
+// Internal modules
 use crate::api::{
-    Anymod, edit_mod, get_dependencies, get_latest_version, list_mods, replace_mods, search_mods,
-    upgrade_mods,
+    Anymod, edit_mod, get_dependencies, get_latest_version, replace_mods, search_mods, upgrade_mods,
 };
-use crate::cache::list_mods_cached;
+use crate::cache::{list_mods_cached, validate_cache};
 use crate::downloader::download_multiple_mods;
 use crate::mfio::{MFText, ainput, parse_to_int, press_enter, select};
 use crate::profile::{add_lock, build_working_profile, list_locks, read_full_config, remove_lock};
@@ -63,6 +64,10 @@ pub async fn add_mod(modname: &str) -> Result<(), Box<dyn Error>> {
         }
         None => {}
     }
+
+    // Regenerate cache
+    validate_cache(&working_profile).await?;
+
     Ok(())
 }
 
@@ -316,7 +321,7 @@ pub async fn search(args: Vec<String>) -> Result<(), Box<dyn Error>> {
     ensure that there won't be any duplicates of mods
     */
 
-    let mod_list = list_mods(&working_profile).await.unwrap_or_default();
+    let mod_list = list_mods_cached(&working_profile).await.unwrap_or_default();
 
     /*
         search_mods() prompts a user to select mods in menu.
@@ -375,6 +380,9 @@ pub async fn search(args: Vec<String>) -> Result<(), Box<dyn Error>> {
     // Download 'files'
     download_multiple_mods(versions, Arc::new(working_profile.clone())).await?;
 
+    // Regenerate cache
+    validate_cache(&working_profile).await?;
+
     Ok(())
 }
 
@@ -398,6 +406,9 @@ pub async fn upgrade() -> Result<(), Box<dyn Error>> {
         &working_profile,
     )
     .await?;
+
+    // Regenerate cache
+    validate_cache(&working_profile).await?;
 
     Ok(())
 }

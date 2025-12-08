@@ -15,11 +15,11 @@ use crate::structs::WorkingProfile;
 // Standard imports
 use std::path::Path;
 use std::result::Result;
+use std::sync::Arc;
 
 // External crates
 use futures::future::join_all;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use std::sync::Arc;
 use tokio::fs::create_dir_all;
 use tokio::io::AsyncWriteExt;
 use tokio::task::JoinHandle;

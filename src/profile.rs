@@ -14,8 +14,8 @@ use std::result::Result;
 // External crates
 use reqwest::Client;
 
-use crate::cache::list_mods_cached;
 // Internal imports
+use crate::cache::list_mods_cached;
 use crate::mfio::select;
 use crate::structs::{Config, Locks, MFHashMap, Profile, WorkingProfile};
 use crate::utils::get_confpath;

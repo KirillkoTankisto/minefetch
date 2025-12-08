@@ -12,6 +12,7 @@ use std::result::Result;
 
 // Internal modules
 mod api;
+mod cache;
 mod consts;
 mod downloader;
 mod front;
@@ -20,7 +21,6 @@ mod mfio;
 mod profile;
 mod structs;
 mod utils;
-mod cache;
 
 use crate::consts::{NAME, PROGRAM_VERSION, USER_AGENT};
 use crate::front::*;

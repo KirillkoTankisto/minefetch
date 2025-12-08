@@ -7,8 +7,8 @@
 
 */
 
-use crate::cache::list_mods_cached;
 // Internal modules
+use crate::cache::list_mods_cached;
 use crate::consts::USER_AGENT;
 use crate::downloader::download_multiple_mods;
 use crate::mfio::select;
@@ -264,20 +264,10 @@ pub async fn upgrade_mods(
 }
 
 /// Lists mods in selected profile
-pub async fn list_mods(
+pub async fn get_mods_from_hash(
     working_profile: &WorkingProfile,
+    hashes: Hash,
 ) -> Result<Vec<Anymod>, Box<dyn std::error::Error>> {
-    // Get the hashes
-    let hashes = Hash {
-        hashes: match get_hashes(&working_profile.profile.modsfolder).await {
-            Ok(hashes) => hashes,
-            Err(_) => return Err("There are no mods yet".into()),
-        },
-        algorithm: "sha1".to_string(),
-        loaders: None,
-        game_versions: None,
-    };
-
     // Parse into json string
     let hashes_send = serde_json::to_string(&hashes)?;
 
@@ -444,14 +434,17 @@ pub async fn list_versions(
 
     let versions: VersionsList = serde_json::from_str(&response)?;
 
-    let mut end: Vec<Anymod> = Vec::new();
     let title = get_projects_name(&client, vec![&versions.first().unwrap().project_id])
         .await?
         .first()
         .unwrap()
         .title
         .clone();
+
+    let mut end: Vec<Anymod> = Vec::new();
+
     let project_id = versions.first().unwrap().project_id.clone();
+
     for version in versions {
         let file = get_primary(&version.files)?;
         let anymod = Anymod {
