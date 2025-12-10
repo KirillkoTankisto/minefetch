@@ -23,15 +23,23 @@ pub struct Cache {
     elements: Vec<Anymod>,
 }
 
+impl Cache {
+    fn new() -> Self {
+        return Self {
+            elements: Vec::new(),
+        };
+    }
+}
+
 /// Creates a new cache file based on the changes
 pub async fn cache_profile(
     working_profile: &WorkingProfile,
     mut cache: Cache,
-    new_mods: Vec<String>,
-    old_mods: Vec<String>,
+    new_mods: Option<Vec<String>>,
+    old_mods: Option<Vec<String>>,
 ) -> Result<(), Box<dyn Error>> {
     // Add new mods
-    if !new_mods.is_empty() {
+    if let Some(new_mods) = new_mods {
         let hash = Hash {
             hashes: new_mods.iter().map(|hash| hash.clone()).collect(),
             algorithm: "sha1".to_string(),
@@ -47,7 +55,7 @@ pub async fn cache_profile(
     }
 
     // Delete old mods
-    if !old_mods.is_empty() {
+    if let Some(old_mods) = old_mods {
         cache
             .elements
             .retain(|element| !old_mods.contains(&&element.hash));
@@ -60,7 +68,6 @@ pub async fn cache_profile(
 
     // Write to the file
     write_cache(working_profile, cache).await?;
-
     Ok(())
 }
 
@@ -70,27 +77,22 @@ pub async fn write_cache(
     cache: Cache,
 ) -> Result<(), Box<dyn Error>> {
     let path = Path::new(&working_profile.profile.modsfolder).join("cache.toml");
-    let data = to_string(&cache)?;
 
-    write(path, data).await?;
-
+    write(path, to_string(&cache)?).await?;
     Ok(())
 }
 
 /// Reads cache from the selected profile
 pub async fn read_cache(working_profile: &WorkingProfile) -> Result<Cache, Box<dyn Error>> {
     let path = Path::new(&working_profile.profile.modsfolder).join("cache.toml");
-
-    let cache: Cache = from_str(&read_to_string(path).await?)?;
-
-    Ok(cache)
+    Ok(from_str(&read_to_string(path).await?)?)
 }
 
 /// Validates cache in the selected profile and rewrites it if needed
 pub async fn validate_cache(working_profile: &WorkingProfile) -> Result<(), Box<dyn Error>> {
-    if let Ok(cache) = read_cache(working_profile).await {
-        let real_hashes = get_hashes(&working_profile.profile.modsfolder).await?;
+    let real_hashes = get_hashes(&working_profile.profile.modsfolder).await?;
 
+    if let Ok(cache) = read_cache(working_profile).await {
         // Create a HashSet for these lists
         let real_set: HashSet<String> = real_hashes.into_iter().collect();
         let cache_set: HashSet<String> = cache
@@ -99,13 +101,16 @@ pub async fn validate_cache(working_profile: &WorkingProfile) -> Result<(), Box<
             .map(|element| element.hash.clone())
             .collect();
 
+        // Find which mods were added and which ones were deleted
         let new_mods: Vec<String> = real_set.difference(&cache_set).cloned().collect();
         let old_mods: Vec<String> = cache_set.difference(&real_set).cloned().collect();
 
         if !new_mods.is_empty() || !old_mods.is_empty() {
-            cache_profile(working_profile, cache, new_mods, old_mods).await?;
+            cache_profile(working_profile, cache, Some(new_mods), Some(old_mods)).await?;
         }
-    };
+    } else {
+        cache_profile(working_profile, Cache::new(), Some(real_hashes), None).await?;
+    }
 
     Ok(())
 }
@@ -114,8 +119,5 @@ pub async fn list_mods_cached(
     working_profile: &WorkingProfile,
 ) -> Result<Vec<Anymod>, Box<dyn Error>> {
     validate_cache(working_profile).await?;
-
-    let mods = read_cache(working_profile).await?.elements;
-
-    Ok(mods)
+    Ok(read_cache(working_profile).await?.elements)
 }

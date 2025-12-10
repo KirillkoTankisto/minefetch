@@ -344,18 +344,15 @@ pub async fn search(args: Vec<String>) -> Result<(), Box<dyn Error>> {
 
     let mut versions: Vec<Anymod> = Vec::new();
 
-    let size = mod_list.len();
-
     // Print the options
     for number in &numbers {
         // Get a git by its number in the list
         match hits.get(*number) {
             // If it's in the range
             Some(version) => {
-                // If there're mods installed in the profile
-                if size != 0 {
-                    let mut installed: bool = false;
+                let mut installed: bool = false;
 
+                if !mod_list.is_empty() {
                     for anymod in &mod_list {
                         if anymod.project_id == version.project_id {
                             eprintln!(
@@ -366,11 +363,12 @@ pub async fn search(args: Vec<String>) -> Result<(), Box<dyn Error>> {
                             break;
                         }
                     }
-                    if !installed {
-                        let project_id = &version.project_id;
-                        let version = get_latest_version(project_id, &working_profile).await?;
-                        versions.push(version);
-                    }
+                }
+
+                if !installed {
+                    let project_id = &version.project_id;
+                    let version = get_latest_version(project_id, &working_profile).await?;
+                    versions.push(version);
                 }
             }
             None => return Err("The number is out of range".into()),

@@ -57,7 +57,7 @@ pub async fn download_mod(
         bar.inc(chunk.len() as u64);
     }
 
-    bar.finish_with_message("Done");
+    bar.finish();
 
     // Success
     Ok(())
@@ -71,7 +71,7 @@ pub async fn download_multiple_mods(
     let mut tasks: Vec<JoinHandle<Result<(), ()>>> = Vec::with_capacity(files.len());
 
     let multibar = Arc::new(MultiProgress::new());
-    let style = ProgressStyle::with_template("{msg} {bar:40.} {bytes}/{total_bytes}")
+    let style = ProgressStyle::with_template("{wide_msg} {bar:50} {percent}%")
         .expect("valid template");
 
     for file in files {
