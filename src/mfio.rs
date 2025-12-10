@@ -11,39 +11,12 @@ use std::num::ParseIntError;
 
 // External crates
 use console::{Key, Term};
-use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
-
-/// Press enter to continue functionality
-pub async fn press_enter() -> Result<(), Box<dyn std::error::Error>> {
-    // Set the stdout (output)
-    let term = Term::stdout();
-
-    // The start of the loop
-    loop {
-        // Read a key
-        let key = term.read_key()?;
-
-        // Check which key is pressed
-        match key {
-            // If user pressed 'enter' then stop
-            Key::Enter => break,
-
-            // If user pressed 'q' then stop with the error
-            Key::Char('q') => return Err("The operation has been cancelled".into()),
-
-            // If user pressed something else then continue
-            _ => (),
-        }
-    }
-
-    // Success
-    Ok(())
-}
+use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader, stdin, stdout};
 
 /// Reads user input and returns a String
 pub async fn ainput(prompt: &str) -> Result<String, Box<dyn std::error::Error>> {
     // Print the prompt
-    let mut stdout = io::stdout();
+    let mut stdout = stdout();
     stdout.write_all(prompt.as_bytes()).await?;
     stdout.flush().await?;
 
@@ -51,7 +24,7 @@ pub async fn ainput(prompt: &str) -> Result<String, Box<dyn std::error::Error>> 
     let mut buffer = String::new();
 
     // Create a reader
-    let mut reader = BufReader::new(tokio::io::stdin());
+    let mut reader = BufReader::new(stdin());
 
     // Read the user input
     reader.read_line(&mut buffer).await?;

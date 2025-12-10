@@ -9,7 +9,7 @@ use crate::api::{
 };
 use crate::cache::{list_mods_cached, validate_cache};
 use crate::downloader::download_multiple_mods;
-use crate::mfio::{MFText, ainput, parse_to_int, press_enter, select};
+use crate::mfio::{MFText, ainput, parse_to_int, select};
 use crate::profile::{add_lock, build_working_profile, list_locks, read_full_config, remove_lock};
 use crate::structs::{Config, Profile};
 use crate::utils::{generate_hash, get_confdir, get_confpath};
@@ -55,11 +55,11 @@ pub async fn add_mod(modname: &str) -> Result<(), Box<dyn Error>> {
     match mod_version.depends {
         Some(dependencies) => {
             // Get the dependencies' info
-            let dependencies = get_dependencies(&dependencies, &working_profile.client).await?;
+            let dependencies = get_dependencies(&dependencies, &working_profile).await?;
 
             // Print all existing dependencies: their names and types (required or optional)
-            for dependency in dependencies {
-                println!(":dep: {} {}", dependency.0, dependency.1);
+            for (anymod, dependency_type) in dependencies {
+                println!(":dep: {} is {}", anymod.title.unwrap(), dependency_type);
             }
         }
         None => {}
@@ -75,9 +75,6 @@ pub async fn add_mod(modname: &str) -> Result<(), Box<dyn Error>> {
 pub async fn create_profile() -> Result<(), Box<dyn Error>> {
     // Print the text
     println!(":out: Press enter to choose mods directory");
-
-    // Ask user to press enter
-    press_enter().await?;
 
     // Get selected folder
     let modsfolder = {
@@ -368,6 +365,12 @@ pub async fn search(args: Vec<String>) -> Result<(), Box<dyn Error>> {
                 if !installed {
                     let project_id = &version.project_id;
                     let version = get_latest_version(project_id, &working_profile).await?;
+                    if let Some(depends) = &version.depends {
+                        let dependencies = get_dependencies(&depends, &working_profile).await?;
+                        for (anymod, dependency_type) in dependencies {
+                            println!(":dep: {}: {} is {}", version.title.clone().unwrap_or_default(), anymod.title.clone().unwrap_or_default(), dependency_type)
+                        }
+                    };
                     versions.push(version);
                 }
             }

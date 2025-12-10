@@ -14,8 +14,7 @@ use crate::downloader::download_multiple_mods;
 use crate::mfio::select;
 use crate::profile::{get_locks, remove_locked_ones, write_lock};
 use crate::structs::{
-    Dependency, File, Hash, Hit, MFHashMap, Project, ProjectList, Search, VersionsList,
-    WorkingProfile,
+    Dependency, File, Hash, Hit, MFHashMap, ProjectList, Search, VersionsList, WorkingProfile,
 };
 use crate::utils::{get_hashes, remove_mods_by_hash};
 
@@ -350,36 +349,20 @@ pub async fn get_mods_from_hash(
 /// Returns mod's dependencies
 pub async fn get_dependencies(
     dependencies: &Vec<Dependency>,
-    client: &Client,
-) -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
+    working_profile: &WorkingProfile,
+) -> Result<Vec<(Anymod, String)>, Box<dyn std::error::Error>> {
     /*
         Create a list of dependencies:
         its name and type (optional or required)
     */
-    let mut dependency_list: Vec<(String, String)> = Vec::new();
+    let mut dependency_list: Vec<(Anymod, String)> = Vec::new();
 
     // Start fetching info for each dependency
     for dependency in dependencies {
-        // This is a URL for current dependency
-        let url = format!(
-            "https://api.modrinth.com/v2/project/{}",
-            dependency.project_id
-        );
+        let anymod = get_latest_version(&dependency.project_id, working_profile).await?;
 
-        // Send a request
-        let response = client
-            .get(url)
-            .header("User-Agent", USER_AGENT)
-            .send()
-            .await?
-            .text()
-            .await?;
-
-        // Parse the response (extracts the project name)
-        let parsed: Project = serde_json::from_str(&response)?;
-
-        // Push the name and dependency type into the list
-        dependency_list.push((parsed.title, dependency.dependency_type.clone()))
+        // Push the version in the list
+        dependency_list.push((anymod, dependency.dependency_type.clone()));
     }
 
     // Return the list
