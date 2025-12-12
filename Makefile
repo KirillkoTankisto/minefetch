@@ -1,6 +1,6 @@
-PKGVER        := 1.6.7
+PKGVER        := 1.6.8
 TARGET_DIR    := target
-TARGETS       := x86_64-unknown-linux-musl
+TARGETS       := x86_64-unknown-linux-musl aarch64-unknown-linux-musl
 CARGO         := cargo build
 CARGO_FLAGS   := -rq --target
 COMMAND       := $(CARGO) $(CARGO_FLAGS)
@@ -15,7 +15,12 @@ set-version:
 # x86_64
 x86_64-unknown-linux-musl:
 	@echo ":out: Building $@"
-	@$(COMMAND) $@
+	@CC=x86_64-linux-gnu-gcc $(COMMAND) $@
+	@echo ":out: Finished building for $@"
+
+aarch64-unknown-linux-musl:
+	@echo ":out: Building $@"
+	@CC=aarch64-linux-gnu-gcc $(COMMAND) $@
 	@echo ":out: Finished building for $@"
 
 # clean workspace
