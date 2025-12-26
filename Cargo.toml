@@ -5,6 +5,7 @@ authors = ["Kirill Sergeev <kirsergeev@icloud.com>"]
 readme = "README.md"
 repository = "https://github.com/KirillkoTankisto/minefetch"
 license = "GPL-3.0-or-later"
+version = "1.6.8"
 
 [dependencies]
 async-recursion = "1.1.1"

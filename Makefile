@@ -1,4 +1,4 @@
-PKGVER        := 1.6.8
+PKGVER        := 1.6.9
 TARGET_DIR    := target
 TARGETS       := x86_64-unknown-linux-musl aarch64-unknown-linux-musl riscv64gc-unknown-linux-musl
 CARGO         := cargo zigbuild
