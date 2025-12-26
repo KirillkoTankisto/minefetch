@@ -1,6 +1,9 @@
 # MineFetch
 
-[![Rustlang](https://img.shields.io/static/v1?label=Made%20with&message=Rust&logo=rust&labelColor=e82833&color=b11522)](https://www.rust-lang.org) [![Github License](https://img.shields.io/github/license/KirillkoTankisto/minefetch?logo=mdBook)](https://github.com/KirillkoTankisto/minefetch/blob/main/LICENSE) ![Github commit activity](https://img.shields.io/github/commit-activity/t/KirillkoTankisto/minefetch) ![Status](https://img.shields.io/badge/development_status-beta-orange?logo=GitHub)
+[![Rust Language](https://img.shields.io/badge/Built%20with-Rust-red?logo=rust&style=for-the-badge)](https://www.rust-lang.org)
+[![Github License](https://img.shields.io/badge/License-GPLv3-green?logo=gplv3&style=for-the-badge)](https://github.com/KirillkoTankisto/minefetch/blob/main/LICENSE)
+![Github Commits](https://img.shields.io/github/commit-activity/t/KirillkoTankisto/minefetch?logo=git&style=for-the-badge)
+![Status](https://img.shields.io/badge/development_status-beta-orange?logo=GitHub&style=for-the-badge)
 
 > This project is inspired by [Ferium](https://github.com/gorilla-devs/ferium) but doesn’t use its code. All code is written from scratch and may not work correctly.
 
@@ -33,19 +36,16 @@ minefetch add <mod_slug_or_id>
 Manage your profiles with these commands:
 
 - **Create a profile:**
-
   ```sh
   minefetch profile create
   ```
 
 - **Delete a profile:**
-
   ```sh
   minefetch profile delete
   ```
 
 - **Delete all profiles:**
-
   ```sh
   minefetch profile delete all
   ```
@@ -57,7 +57,6 @@ Manage your profiles with these commands:
   ```
 
 - **Switch between profiles:**
-
   ```sh
   minefetch profile switch
   ```
@@ -86,23 +85,23 @@ minefetch list
 
 ### Lock mods
 
-Lock, unlock and list your locks with these commands:
+Locks enable you to decide what mods shouldn't update. Lock, unlock and list your locks with these commands:
 
 - **Add a lock**
 
 ```sh
-  minefetch lock add
+minefetch lock add
 ```
 
 - **Remove a lock**
 
 ```sh
-  minefetch lock remove
+minefetch lock remove
 ```
 
 - **List locks**
 ```sh
-  minefetch lock list
+minefetch lock list
 ```
 
 ### Edit mods
@@ -110,7 +109,7 @@ Lock, unlock and list your locks with these commands:
 Edit the mod:
 
 ```sh
-  minefetch edit
+minefetch edit
 ```
 
 ### Check MineFetch Version
@@ -129,24 +128,44 @@ Display help message:
 minefetch help
 ```
 
-## Installation
+# Installation
 
-### Download Pre-built Binary
+## Download Pre-built Binary
 
-Download the latest version [here](https://github.com/KirillkoTankisto/minefetch/releases/latest/download/minefetch).
+Download the latest version [here](https://github.com/KirillkoTankisto/minefetch/releases/latest).
 
-### Build from Source
+## Build from Source
 
-To build MineFetch from source, ensure you have Git and Rustup installed then run:
+To build MineFetch from source, ensure you have `make`, `git`, `rustup` and `cargo-zigbuild` installed.
 
+### 1. Clone the repo:
 ```sh
 git clone https://github.com/KirillkoTankisto/minefetch.git
 cd minefetch
-./build-native
 ```
-The executable will be located in the `release` directory.
-> If you need cross-compilation, it is better to use build-aarch64, build-riscv64gc and build-x86_64.
+
+### 2.1 Build for x86_64, aarch64, riscv64:
+```sh
+make build
+```
+The output binaries will be packaged in ./build-cross/
+
+### 2.2 Build for your host's target:
+```sh
+make native
+```
+The output binary will appear in ./target/release/
+
+### 2.3 Build for a custom target:
+```sh
+make <target-triple>
+```
+
+example:
+```sh
+make x86_64-pc-windows-gnullvm
+```
+the output binary will appear in ./target/<target-triple>/
 
 ## Contact
-
 For inquiries or support, reach me on Discord at `notfunnyclown`.

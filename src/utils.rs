@@ -52,16 +52,16 @@ pub async fn get_hashes(path: &str) -> Result<Vec<String>, Box<dyn std::error::E
         }
     }
 
-    if paths.is_empty() {
-        return Err("No entries to calculate".into());
-    }
-
     let mut handles = Vec::with_capacity(paths.len());
 
     for p in paths {
         if p.extension().unwrap_or_default() == "jar" {
             handles.push(spawn_blocking(move || calculate_sha1(&p)));
         }
+    }
+
+    if handles.is_empty() {
+        return Ok(Vec::new());
     }
 
     // Collect results

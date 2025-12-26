@@ -39,7 +39,7 @@ pub async fn read_config() -> Result<Profile, Box<dyn std::error::Error>> {
         .profile
         .into_iter()
         .find(|profile| profile.active) // Searching for only active one
-        .ok_or_else(|| ":out: No active profile found".into())
+        .ok_or_else(|| "No active profile found".into())
 }
 
 /// Returns full Config

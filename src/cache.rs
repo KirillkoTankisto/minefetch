@@ -85,33 +85,36 @@ pub async fn write_cache(
 /// Reads cache from the selected profile
 pub async fn read_cache(working_profile: &WorkingProfile) -> Result<Cache, Box<dyn Error>> {
     let path = Path::new(&working_profile.profile.modsfolder).join("cache.toml");
-    Ok(from_str(&read_to_string(path).await?)?)
+    if let Ok(file) = read_to_string(path).await {
+        let parsed: Cache = from_str(&file)?;
+        return Ok(parsed);
+    }
+    Ok(Cache::new())
 }
 
 /// Validates cache in the selected profile and rewrites it if needed
 pub async fn validate_cache(working_profile: &WorkingProfile) -> Result<(), Box<dyn Error>> {
-    let real_hashes = get_hashes(&working_profile.profile.modsfolder).await?;
+    if let Ok(real_hashes) = get_hashes(&working_profile.profile.modsfolder).await {
+        if let Ok(cache) = read_cache(working_profile).await {
+            // Create a HashSet for these lists
+            let real_set: HashSet<String> = real_hashes.into_iter().collect();
+            let cache_set: HashSet<String> = cache
+                .elements
+                .iter()
+                .map(|element| element.hash.clone())
+                .collect();
 
-    if let Ok(cache) = read_cache(working_profile).await {
-        // Create a HashSet for these lists
-        let real_set: HashSet<String> = real_hashes.into_iter().collect();
-        let cache_set: HashSet<String> = cache
-            .elements
-            .iter()
-            .map(|element| element.hash.clone())
-            .collect();
+            // Find which mods were added and which ones were deleted
+            let new_mods: Vec<String> = real_set.difference(&cache_set).cloned().collect();
+            let old_mods: Vec<String> = cache_set.difference(&real_set).cloned().collect();
 
-        // Find which mods were added and which ones were deleted
-        let new_mods: Vec<String> = real_set.difference(&cache_set).cloned().collect();
-        let old_mods: Vec<String> = cache_set.difference(&real_set).cloned().collect();
-
-        if !new_mods.is_empty() || !old_mods.is_empty() {
-            cache_profile(working_profile, cache, Some(new_mods), Some(old_mods)).await?;
+            if !new_mods.is_empty() || !old_mods.is_empty() {
+                cache_profile(working_profile, cache, Some(new_mods), Some(old_mods)).await?;
+            }
+        } else {
+            cache_profile(working_profile, Cache::new(), Some(real_hashes), None).await?;
         }
-    } else {
-        cache_profile(working_profile, Cache::new(), Some(real_hashes), None).await?;
     }
-
     Ok(())
 }
 

@@ -5,13 +5,14 @@ use std::sync::Arc;
 
 // Internal modules
 use crate::api::{
-    Anymod, edit_mod, get_dependencies, get_latest_version, replace_mods, search_mods, upgrade_mods,
+    Anymod, edit_mod, get_dependencies_recursive, get_latest_version, replace_mods, search_mods,
+    upgrade_mods,
 };
 use crate::cache::{list_mods_cached, validate_cache};
 use crate::downloader::download_multiple_mods;
 use crate::mfio::{MFText, ainput, parse_to_int, select};
 use crate::profile::{add_lock, build_working_profile, list_locks, read_full_config, remove_lock};
-use crate::structs::{Config, Profile};
+use crate::structs::{Config, Dependency, Profile};
 use crate::utils::{generate_hash, get_confdir, get_confpath};
 
 pub async fn add_mod(modname: &str) -> Result<(), Box<dyn Error>> {
@@ -26,8 +27,8 @@ pub async fn add_mod(modname: &str) -> Result<(), Box<dyn Error>> {
 
     let mod_list = list_mods_cached(&working_profile).await?;
 
-    for anymod in mod_list {
-        if anymod.hash == mod_version.hash {
+    for anymod in &mod_list {
+        if anymod.project_id == mod_version.project_id {
             return Err(format!(
                 "The mod {} is already installed",
                 mod_version.title.as_ref().ok_or("No title")?
@@ -36,33 +37,153 @@ pub async fn add_mod(modname: &str) -> Result<(), Box<dyn Error>> {
         }
     }
 
-    // Download this version
-    replace_mods(
-        vec![&mod_version.hash],
-        vec![mod_version.clone()],
-        &working_profile,
-    )
-    .await?;
-
-    // Print text
-    println!(
-        ":out: Downloaded {} ({})",
-        &mod_version.title.unwrap(),
-        &mod_version.filename
-    );
+    let mut required = vec![mod_version.clone()];
+    let mut optional: Vec<Anymod> = vec![];
 
     // Check for existing dependencies
-    match mod_version.depends {
-        Some(dependencies) => {
-            // Get the dependencies' info
-            let dependencies = get_dependencies(&dependencies, &working_profile).await?;
+    if let Some(dependencies) = mod_version.depends {
+        let deps = get_dependencies_recursive(&dependencies, &working_profile).await?;
 
-            // Print all existing dependencies: their names and types (required or optional)
-            for (anymod, dependency_type) in dependencies {
-                println!(":dep: {} is {}", anymod.title.unwrap(), dependency_type);
+        for (dep, dep_type) in deps {
+            let mut installed: bool = false;
+
+            for anymod in &mod_list {
+                if anymod.project_id == dep.project_id {
+                    installed = true;
+                    break;
+                }
+            }
+
+            if !installed {
+                if dep_type == "required" {
+                    required.push(dep);
+                } else if dep_type == "optional" {
+                    optional.push(dep);
+                }
             }
         }
-        None => {}
+    }
+
+    download_multiple_mods(required, Arc::new(working_profile.clone())).await?;
+
+    // Regenerate cache
+    validate_cache(&working_profile).await?;
+
+    if !optional.is_empty() {
+        println!("Optional mods:");
+
+        for anymod in optional {
+            println!("\t{}", anymod.title.unwrap_or(anymod.filename))
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn search(args: Vec<String>) -> Result<(), Box<dyn Error>> {
+    // Join all the strings to form a query
+    let query = args[2..].join(" ");
+
+    // Create a working profile
+    let working_profile = build_working_profile().await?;
+
+    /*
+    Get the current mods' list to compare with
+    versions that user will try to install. It's needed to
+    ensure that there won't be any duplicates of mods
+    */
+
+    let mod_list = list_mods_cached(&working_profile).await.unwrap_or_default();
+
+    /*
+        search_mods() prompts a user to select mods in menu.
+        So, 'files' contains a list of mods to install.
+    */
+    let hits = search_mods(&query, &working_profile).await?;
+
+    // Print all hits
+    for number in (0..hits.len()).rev() {
+        if let Some(hit) = hits.get(number) {
+            println!("[{}] {}", number + 1, hit.title);
+        }
+    }
+
+    // Parse the user input
+    let selected_string = ainput(":out: Select mods to install: ").await?;
+
+    // Create a selected number list
+    let numbers = parse_to_int(selected_string)?;
+
+    let mut required: Vec<Anymod> = Vec::new();
+    let mut merged_depends: Vec<Dependency> = Vec::new();
+
+    // Print the options
+    for number in &numbers {
+        // Get a git by its number in the list
+        match hits.get(*number) {
+            // If it's in the range
+            Some(version) => {
+                let mut installed: bool = false;
+
+                if !mod_list.is_empty() {
+                    for anymod in &mod_list {
+                        if anymod.project_id == version.project_id {
+                            eprintln!(
+                                ":wrn: The mod {} is already installed, skipping",
+                                version.title
+                            );
+                            installed = true;
+                            break;
+                        }
+                    }
+                }
+
+                if !installed {
+                    let project_id = &version.project_id;
+                    let version = get_latest_version(project_id, &working_profile).await?;
+                    if let Some(direct_dependencies) = &version.depends {
+                        merged_depends.append(&mut direct_dependencies.clone());
+                    };
+                    required.push(version);
+                }
+            }
+            None => return Err("The number is out of range".into()),
+        };
+    }
+    
+    let mut optional: Vec<Anymod> = vec![];
+
+    if !merged_depends.is_empty() {
+        let depends = get_dependencies_recursive(&merged_depends, &working_profile).await?;
+        for (dep, dep_type) in depends {
+            let mut installed: bool = false;
+
+            for anymod in &mod_list {
+                if anymod.project_id == dep.project_id {
+                    installed = true;
+                    break;
+                }
+            }
+
+            if !installed {
+                if dep_type == "required" {
+                    required.push(dep);
+                } else if dep_type == "optional" {
+                    optional.push(dep);
+                }
+            }
+        }
+    }
+
+    // Download 'files'
+    download_multiple_mods(required, Arc::new(working_profile.clone())).await?;
+    
+    if !optional.is_empty() {
+        println!("Optional mods:");
+
+        for anymod in optional {
+            println!("\t{}", anymod.title.unwrap_or(anymod.filename))
+        }
     }
 
     // Regenerate cache
@@ -73,22 +194,18 @@ pub async fn add_mod(modname: &str) -> Result<(), Box<dyn Error>> {
 
 /// Creates config file
 pub async fn create_profile() -> Result<(), Box<dyn Error>> {
-    // Print the text
-    println!(":out: Press enter to choose mods directory");
-
     // Get selected folder
     let modsfolder = {
-        let buffer = ainput(":: Enter the path to mods folder: ").await?;
+        let buffer = ainput(":: Enter the path to mods directory: ").await?;
         let path = Path::new(&buffer);
         if !path.exists() {
-            return Err("No folder with such name".into());
+            return Err("There's no directory in this path".into());
         }
         buffer.trim().to_string()
     };
 
     // Get minecraft version
-
-    let gameversion = ainput(":out: Type a Minecraft version: ").await?;
+    let gameversion = ainput(":out: Enter the Minecraft version: ").await?;
 
     // A list of loaders
     let loaders: Vec<(&str, &str)> = vec![
@@ -302,88 +419,6 @@ pub async fn list_profiles() -> Result<(), Box<dyn Error>> {
     }
 
     // Success
-    Ok(())
-}
-
-pub async fn search(args: Vec<String>) -> Result<(), Box<dyn Error>> {
-    // Join all the strings to form a query
-    let query = args[2..].join(" ");
-
-    // Create a working profile
-    let working_profile = build_working_profile().await?;
-
-    /*
-    Get the current mods' list to compare with
-    versions that user will try to install. It's needed to
-    ensure that there won't be any duplicates of mods
-    */
-
-    let mod_list = list_mods_cached(&working_profile).await.unwrap_or_default();
-
-    /*
-        search_mods() prompts a user to select mods in menu.
-        So, 'files' contains a list of mods to install.
-    */
-    let hits = search_mods(&query, &working_profile).await?;
-
-    // Print all hits
-    for number in (0..hits.len()).rev() {
-        if let Some(hit) = hits.get(number) {
-            println!("[{}] {}", number + 1, hit.title);
-        }
-    }
-
-    // Parse the user input
-    let selected_string = ainput(":out: Select mods to install: ").await?;
-
-    // Create a selected number list
-    let numbers = parse_to_int(selected_string)?;
-
-    let mut versions: Vec<Anymod> = Vec::new();
-
-    // Print the options
-    for number in &numbers {
-        // Get a git by its number in the list
-        match hits.get(*number) {
-            // If it's in the range
-            Some(version) => {
-                let mut installed: bool = false;
-
-                if !mod_list.is_empty() {
-                    for anymod in &mod_list {
-                        if anymod.project_id == version.project_id {
-                            eprintln!(
-                                ":wrn: The mod {} is already installed, skipping",
-                                version.title
-                            );
-                            installed = true;
-                            break;
-                        }
-                    }
-                }
-
-                if !installed {
-                    let project_id = &version.project_id;
-                    let version = get_latest_version(project_id, &working_profile).await?;
-                    if let Some(depends) = &version.depends {
-                        let dependencies = get_dependencies(&depends, &working_profile).await?;
-                        for (anymod, dependency_type) in dependencies {
-                            println!(":dep: {}: {} is {}", version.title.clone().unwrap_or_default(), anymod.title.clone().unwrap_or_default(), dependency_type)
-                        }
-                    };
-                    versions.push(version);
-                }
-            }
-            None => return Err("The number is out of range".into()),
-        };
-    }
-
-    // Download 'files'
-    download_multiple_mods(versions, Arc::new(working_profile.clone())).await?;
-
-    // Regenerate cache
-    validate_cache(&working_profile).await?;
-
     Ok(())
 }
 

@@ -19,6 +19,7 @@ use crate::structs::{
 use crate::utils::{get_hashes, remove_mods_by_hash};
 
 // External crates
+use async_recursion::async_recursion;
 use reqwest::Client;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
@@ -27,6 +28,7 @@ use serde_json::json;
 
 // Standard libraries
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::error::Error;
 use std::sync::Arc;
 
@@ -346,29 +348,6 @@ pub async fn get_mods_from_hash(
     Ok(end)
 }
 
-/// Returns mod's dependencies
-pub async fn get_dependencies(
-    dependencies: &Vec<Dependency>,
-    working_profile: &WorkingProfile,
-) -> Result<Vec<(Anymod, String)>, Box<dyn std::error::Error>> {
-    /*
-        Create a list of dependencies:
-        its name and type (optional or required)
-    */
-    let mut dependency_list: Vec<(Anymod, String)> = Vec::new();
-
-    // Start fetching info for each dependency
-    for dependency in dependencies {
-        let anymod = get_latest_version(&dependency.project_id, working_profile).await?;
-
-        // Push the version in the list
-        dependency_list.push((anymod, dependency.dependency_type.clone()));
-    }
-
-    // Return the list
-    Ok(dependency_list)
-}
-
 pub async fn get_projects_name(
     client: &Client,
     project_id: Vec<&String>,
@@ -391,6 +370,46 @@ pub async fn get_projects_name(
     let parsed: ProjectList = serde_json::from_str(&response)?;
 
     Ok(parsed)
+}
+
+#[async_recursion]
+pub async fn resolve_dependencies_recursive(
+    dependencies: &[Dependency],
+    working_profile: &WorkingProfile,
+    processed: &mut HashSet<String>,
+    result: &mut Vec<(Anymod, String)>,
+) -> Result<(), Box<dyn Error>> {
+    for dependency in dependencies {
+        // Skip already processed mods
+        if !processed.insert(dependency.project_id.clone()) {
+            continue;
+        }
+
+        let anymod = get_latest_version(&dependency.project_id, working_profile).await?;
+
+        let dep_type = dependency.dependency_type.clone();
+        result.push((anymod.clone(), dep_type));
+
+        // Get dependencies for this dependency, recursively
+        if let Some(subdeps) = &anymod.depends {
+            resolve_dependencies_recursive(subdeps, working_profile, processed, result).await?;
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn get_dependencies_recursive(
+    dependencies: &[Dependency],
+    working_profile: &WorkingProfile,
+) -> Result<Vec<(Anymod, String)>, Box<dyn std::error::Error>> {
+    let mut processed = HashSet::new();
+    let mut result = Vec::new();
+
+    resolve_dependencies_recursive(dependencies, working_profile, &mut processed, &mut result)
+        .await?;
+
+    Ok(result)
 }
 
 /// Lists versions for one project
