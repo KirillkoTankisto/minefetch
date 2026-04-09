@@ -56,7 +56,7 @@ pub fn get_primary(files: &Vec<File>) -> Result<File, Box<dyn Error>> {
 /// Gets the latest version of the mod by slug or id
 pub async fn get_latest_version(
     modname: &String,
-    working_profile: &WorkingProfile,
+    working_profile: Arc<WorkingProfile>,
 ) -> Result<Anymod, Box<dyn std::error::Error>> {
     // Set the parameters for the URL
     let params = &[
@@ -130,7 +130,7 @@ pub async fn get_latest_version(
 /// Mod search
 pub async fn search_mods(
     query: &str,
-    working_profile: &WorkingProfile,
+    working_profile: Arc<WorkingProfile>,
 ) -> Result<Vec<Hit>, Box<dyn Error>> {
     // Set facets
     let facets = json!([
@@ -168,7 +168,7 @@ pub async fn search_mods(
 
 /// Updates mods to the latest version
 pub async fn upgrade_mods(
-    working_profile: &WorkingProfile,
+    working_profile: Arc<WorkingProfile>,
 ) -> Result<(Vec<String>, Vec<Anymod>), Box<dyn Error>> {
     // Get hashes from mods' directory
     let hashes = get_hashes(&working_profile.profile.modsfolder).await?;
@@ -266,7 +266,7 @@ pub async fn upgrade_mods(
 
 /// Lists mods in selected profile
 pub async fn get_mods_from_hash(
-    working_profile: &WorkingProfile,
+    working_profile: Arc<WorkingProfile>,
     hashes: Hash,
 ) -> Result<Vec<Anymod>, Box<dyn std::error::Error>> {
     // Parse into json string
@@ -350,10 +350,10 @@ pub async fn get_mods_from_hash(
 
 pub async fn get_projects_name(
     client: &Client,
-    project_id: Vec<&String>,
+    project_ids: Vec<&String>,
 ) -> Result<ProjectList, Box<dyn Error>> {
     // Join all IDs into a comma-separated string
-    let ids = json!(project_id);
+    let ids = json!(project_ids);
 
     // Create a single ("ids", "value1,value2,...") tuple
     let params = &[("ids", ids.to_string())];
@@ -375,7 +375,7 @@ pub async fn get_projects_name(
 #[async_recursion]
 pub async fn resolve_dependencies_recursive(
     dependencies: &[Dependency],
-    working_profile: &WorkingProfile,
+    working_profile: Arc<WorkingProfile>,
     processed: &mut HashSet<String>,
     result: &mut Vec<(Anymod, String)>,
 ) -> Result<(), Box<dyn Error>> {
@@ -385,14 +385,14 @@ pub async fn resolve_dependencies_recursive(
             continue;
         }
 
-        let anymod = get_latest_version(&dependency.project_id, working_profile).await?;
+        let anymod = get_latest_version(&dependency.project_id, working_profile.clone()).await?;
 
         let dep_type = dependency.dependency_type.clone();
         result.push((anymod.clone(), dep_type));
 
         // Get dependencies for this dependency, recursively
         if let Some(subdeps) = &anymod.depends {
-            resolve_dependencies_recursive(subdeps, working_profile, processed, result).await?;
+            resolve_dependencies_recursive(subdeps, working_profile.clone(), processed, result).await?;
         }
     }
 
@@ -401,7 +401,7 @@ pub async fn resolve_dependencies_recursive(
 
 pub async fn get_dependencies_recursive(
     dependencies: &[Dependency],
-    working_profile: &WorkingProfile,
+    working_profile: Arc<WorkingProfile>,
 ) -> Result<Vec<(Anymod, String)>, Box<dyn std::error::Error>> {
     let mut processed = HashSet::new();
     let mut result = Vec::new();
@@ -414,7 +414,7 @@ pub async fn get_dependencies_recursive(
 
 /// Lists versions for one project
 pub async fn list_versions(
-    working_profile: &WorkingProfile,
+    working_profile: Arc<WorkingProfile>,
     project: String,
     params: &[(&str, &String)],
 ) -> Result<Vec<Anymod>, Box<dyn std::error::Error>> {
@@ -466,9 +466,9 @@ pub async fn list_versions(
 }
 
 /// Edits a mod
-pub async fn edit_mod(working_profile: &WorkingProfile) -> Result<(), Box<dyn Error>> {
+pub async fn edit_mod(working_profile: Arc<WorkingProfile>) -> Result<(), Box<dyn Error>> {
     // Get the current mod list
-    let modlist = list_mods_cached(working_profile).await?;
+    let modlist = list_mods_cached(working_profile.clone()).await?;
 
     /*
         Create a list for a select() function
@@ -504,7 +504,7 @@ pub async fn edit_mod(working_profile: &WorkingProfile) -> Result<(), Box<dyn Er
     ];
 
     // Parse the response
-    let parsed = list_versions(working_profile, mod_to_edit.project_id.clone(), params).await?;
+    let parsed = list_versions(working_profile.clone(), mod_to_edit.project_id, params).await?;
 
     /*
         Create a list of available versions.
@@ -535,7 +535,7 @@ pub async fn edit_mod(working_profile: &WorkingProfile) -> Result<(), Box<dyn Er
     replace_mods(
         vec![&mod_to_edit.hash],
         vec![version_to_install.clone()],
-        working_profile,
+        working_profile.clone(),
     )
     .await?;
 
@@ -554,10 +554,10 @@ pub async fn edit_mod(working_profile: &WorkingProfile) -> Result<(), Box<dyn Er
 pub async fn replace_mods(
     old_hashes: Vec<&String>,
     new_mods: Vec<Anymod>,
-    working_profile: &WorkingProfile,
+    working_profile: Arc<WorkingProfile>,
 ) -> Result<(), Box<dyn Error>> {
     // Download the new ones
-    download_multiple_mods(new_mods, Arc::new(working_profile.clone())).await?;
+    download_multiple_mods(new_mods, working_profile.clone()).await?;
 
     // Remove the old mods
     remove_mods_by_hash(&working_profile.profile.modsfolder, &old_hashes).await?;

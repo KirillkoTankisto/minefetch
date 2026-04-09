@@ -37,6 +37,10 @@ pub const HELP_MESSAGE: Help = Help {
             description: "add a single mod",
         },
         &Message {
+            name: "edit",
+            description: "edit a mod",
+        },
+        &Message {
             name: "profile create",
             description: "create a new profile",
         },

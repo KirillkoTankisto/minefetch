@@ -8,6 +8,7 @@
 */
 
 // Standard imports
+use std::sync::Arc;
 use std::path::{Path, PathBuf};
 use std::result::Result;
 
@@ -83,9 +84,9 @@ pub async fn get_locks(profile: &Profile) -> Result<Vec<String>, Box<dyn std::er
 }
 
 /// Adds a lock
-pub async fn add_lock(working_profile: &WorkingProfile) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn add_lock(working_profile: Arc<WorkingProfile>) -> Result<(), Box<dyn std::error::Error>> {
     // Get a mod list
-    let versions = list_mods_cached(&working_profile).await?;
+    let versions = list_mods_cached(working_profile.clone()).await?;
 
     // Create a mutable mod menu
     let mut modmenu: Vec<(String, String)> = Vec::new();
@@ -131,7 +132,7 @@ pub async fn write_lock(profile: &Profile, hash: String) -> Result<(), Box<dyn s
 
 /// Removes a lock
 pub async fn remove_lock(
-    working_profile: &WorkingProfile,
+    working_profile: Arc<WorkingProfile>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Get a mutable lock list
     let mut locks = get_locks(&working_profile.profile).await?;
@@ -140,7 +141,7 @@ pub async fn remove_lock(
     let mut lockmenu: Vec<(String, String)> = Vec::new();
 
     // Get a mod list
-    let mods = list_mods_cached(&working_profile).await?;
+    let mods = list_mods_cached(working_profile.clone()).await?;
 
     /*
         Go through all locks and get an
@@ -223,13 +224,13 @@ pub fn get_locks_path(profile: &Profile) -> PathBuf {
 
 /// Lists all locks
 pub async fn list_locks(
-    working_profile: &WorkingProfile,
+    working_profile: Arc<WorkingProfile>,
 ) -> Result<Vec<(usize, String, String)>, Box<dyn std::error::Error>> {
     // Get a locks' list
     let locks = get_locks(&working_profile.profile).await?;
 
     // Get a mods' list
-    let mods = list_mods_cached(&working_profile).await?;
+    let mods = list_mods_cached(working_profile).await?;
 
     // Set the counter
     let mut counter: usize = 1;
@@ -270,7 +271,7 @@ pub async fn list_locks(
 }
 
 /// Creates a WorkingProfile which contains a Client and a Profile
-pub async fn build_working_profile() -> Result<WorkingProfile, Box<dyn std::error::Error>> {
+pub async fn build_working_profile() -> Result<Arc<WorkingProfile>, Box<dyn std::error::Error>> {
     // Read the profile
     let profile = read_config().await?;
 
@@ -281,5 +282,5 @@ pub async fn build_working_profile() -> Result<WorkingProfile, Box<dyn std::erro
     let working_profile = WorkingProfile { profile, client };
 
     // Return the WorkingProfile
-    Ok(working_profile)
+    Ok(Arc::new(working_profile))
 }

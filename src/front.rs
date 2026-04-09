@@ -1,7 +1,6 @@
 // Standard libraries
 use std::error::Error;
 use std::path::Path;
-use std::sync::Arc;
 
 // Internal modules
 use crate::api::{
@@ -23,9 +22,9 @@ pub async fn add_mod(modname: &str) -> Result<(), Box<dyn Error>> {
     let working_profile = build_working_profile().await?;
 
     // Get the latest version
-    let mod_version = get_latest_version(&modname.to_string(), &working_profile).await?;
+    let mod_version = get_latest_version(&modname.to_string(), working_profile.clone()).await?;
 
-    let mod_list = list_mods_cached(&working_profile).await?;
+    let mod_list = list_mods_cached(working_profile.clone()).await?;
 
     for anymod in &mod_list {
         if anymod.project_id == mod_version.project_id {
@@ -42,7 +41,7 @@ pub async fn add_mod(modname: &str) -> Result<(), Box<dyn Error>> {
 
     // Check for existing dependencies
     if let Some(dependencies) = mod_version.depends {
-        let deps = get_dependencies_recursive(&dependencies, &working_profile).await?;
+        let deps = get_dependencies_recursive(&dependencies, working_profile.clone()).await?;
 
         for (dep, dep_type) in deps {
             let mut installed: bool = false;
@@ -64,10 +63,10 @@ pub async fn add_mod(modname: &str) -> Result<(), Box<dyn Error>> {
         }
     }
 
-    download_multiple_mods(required, Arc::new(working_profile.clone())).await?;
+    download_multiple_mods(required, working_profile.clone()).await?;
 
     // Regenerate cache
-    validate_cache(&working_profile).await?;
+    validate_cache(working_profile).await?;
 
     if !optional.is_empty() {
         println!("Optional mods:");
@@ -93,13 +92,13 @@ pub async fn search(args: Vec<String>) -> Result<(), Box<dyn Error>> {
     ensure that there won't be any duplicates of mods
     */
 
-    let mod_list = list_mods_cached(&working_profile).await.unwrap_or_default();
+    let mod_list = list_mods_cached(working_profile.clone()).await.unwrap_or_default();
 
     /*
         search_mods() prompts a user to select mods in menu.
         So, 'files' contains a list of mods to install.
     */
-    let hits = search_mods(&query, &working_profile).await?;
+    let hits = search_mods(&query, working_profile.clone()).await?;
 
     // Print all hits
     for number in (0..hits.len()).rev() {
@@ -119,18 +118,18 @@ pub async fn search(args: Vec<String>) -> Result<(), Box<dyn Error>> {
 
     // Print the options
     for number in &numbers {
-        // Get a git by its number in the list
+        // Get a hit by its number in the list
         match hits.get(*number) {
             // If it's in the range
-            Some(version) => {
+            Some(hit) => {
                 let mut installed: bool = false;
 
                 if !mod_list.is_empty() {
                     for anymod in &mod_list {
-                        if anymod.project_id == version.project_id {
+                        if anymod.project_id == hit.project_id {
                             eprintln!(
                                 ":wrn: The mod {} is already installed, skipping",
-                                version.title
+                                hit.title
                             );
                             installed = true;
                             break;
@@ -139,8 +138,8 @@ pub async fn search(args: Vec<String>) -> Result<(), Box<dyn Error>> {
                 }
 
                 if !installed {
-                    let project_id = &version.project_id;
-                    let version = get_latest_version(project_id, &working_profile).await?;
+                    let project_id = &hit.project_id;
+                    let version = get_latest_version(project_id, working_profile.clone()).await?;
                     if let Some(direct_dependencies) = &version.depends {
                         merged_depends.append(&mut direct_dependencies.clone());
                     };
@@ -154,7 +153,7 @@ pub async fn search(args: Vec<String>) -> Result<(), Box<dyn Error>> {
     let mut optional: Vec<Anymod> = vec![];
 
     if !merged_depends.is_empty() {
-        let depends = get_dependencies_recursive(&merged_depends, &working_profile).await?;
+        let depends = get_dependencies_recursive(&merged_depends, working_profile.clone()).await?;
         for (dep, dep_type) in depends {
             let mut installed: bool = false;
 
@@ -176,7 +175,7 @@ pub async fn search(args: Vec<String>) -> Result<(), Box<dyn Error>> {
     }
 
     // Download 'files'
-    download_multiple_mods(required, Arc::new(working_profile.clone())).await?;
+    download_multiple_mods(required, working_profile.clone()).await?;
     
     if !optional.is_empty() {
         println!("Optional mods:");
@@ -187,7 +186,7 @@ pub async fn search(args: Vec<String>) -> Result<(), Box<dyn Error>> {
     }
 
     // Regenerate cache
-    validate_cache(&working_profile).await?;
+    validate_cache(working_profile).await?;
 
     Ok(())
 }
@@ -427,7 +426,7 @@ pub async fn upgrade() -> Result<(), Box<dyn Error>> {
     let working_profile = build_working_profile().await?;
 
     // Returns a list of new files of mods to install
-    let (old_mods, new_mods) = upgrade_mods(&working_profile).await?;
+    let (old_mods, new_mods) = upgrade_mods(working_profile.clone()).await?;
 
     // If empty then there're no mods to update
     if new_mods.len() == 0 {
@@ -439,12 +438,12 @@ pub async fn upgrade() -> Result<(), Box<dyn Error>> {
     replace_mods(
         old_mods.iter().map(|hash| hash).collect(),
         new_mods,
-        &working_profile,
+        working_profile.clone(),
     )
     .await?;
 
     // Regenerate cache
-    validate_cache(&working_profile).await?;
+    validate_cache(working_profile).await?;
 
     Ok(())
 }
@@ -452,7 +451,7 @@ pub async fn upgrade() -> Result<(), Box<dyn Error>> {
 pub async fn list_cached() -> Result<(), Box<dyn Error>> {
     let working_profile = build_working_profile().await?;
 
-    let mods = list_mods_cached(&working_profile).await?;
+    let mods = list_mods_cached(working_profile.clone()).await?;
     let size = mods.len();
 
     // Print text
@@ -485,7 +484,7 @@ pub async fn fadd_lock() -> Result<(), Box<dyn Error>> {
     let working_profile = build_working_profile().await?;
 
     // Add a lock through interactive menu
-    add_lock(&working_profile).await?;
+    add_lock(working_profile).await?;
 
     Ok(())
 }
@@ -495,7 +494,7 @@ pub async fn rm_lock() -> Result<(), Box<dyn Error>> {
     let working_profile = build_working_profile().await?;
 
     // Remove a lock through interactive menu
-    remove_lock(&working_profile).await?;
+    remove_lock(working_profile).await?;
 
     Ok(())
 }
@@ -505,7 +504,7 @@ pub async fn fedit_mod() -> Result<(), Box<dyn Error>> {
     let working_profile = build_working_profile().await?;
 
     // Call an interactive dialog
-    edit_mod(&working_profile).await?;
+    edit_mod(working_profile).await?;
 
     Ok(())
 }
@@ -513,7 +512,7 @@ pub async fn fedit_mod() -> Result<(), Box<dyn Error>> {
 pub async fn ls_lock() -> Result<(), Box<dyn Error>> {
     // Create a working profile
     let working_profile = build_working_profile().await?;
-    let locks = list_locks(&working_profile).await?;
+    let locks = list_locks(working_profile).await?;
 
     for (size, name, filename) in locks {
         println!(

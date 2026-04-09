@@ -1,4 +1,5 @@
 // Standard libraries
+use std::sync::Arc;
 use std::collections::HashSet;
 use std::error::Error;
 use std::path::Path;
@@ -33,7 +34,7 @@ impl Cache {
 
 /// Creates a new cache file based on the changes
 pub async fn cache_profile(
-    working_profile: &WorkingProfile,
+    working_profile: Arc<WorkingProfile>,
     mut cache: Cache,
     new_mods: Option<Vec<String>>,
     old_mods: Option<Vec<String>>,
@@ -47,7 +48,7 @@ pub async fn cache_profile(
             game_versions: None,
         };
 
-        let new_anymods = get_mods_from_hash(working_profile, hash).await?;
+        let new_anymods = get_mods_from_hash(working_profile.clone(), hash).await?;
 
         for anymod in new_anymods {
             cache.elements.push(anymod);
@@ -73,7 +74,7 @@ pub async fn cache_profile(
 
 /// Writes cache into the selected profile
 pub async fn write_cache(
-    working_profile: &WorkingProfile,
+    working_profile: Arc<WorkingProfile>,
     cache: Cache,
 ) -> Result<(), Box<dyn Error>> {
     let path = Path::new(&working_profile.profile.modsfolder).join("cache.toml");
@@ -83,7 +84,7 @@ pub async fn write_cache(
 }
 
 /// Reads cache from the selected profile
-pub async fn read_cache(working_profile: &WorkingProfile) -> Result<Cache, Box<dyn Error>> {
+pub async fn read_cache(working_profile: Arc<WorkingProfile>) -> Result<Cache, Box<dyn Error>> {
     let path = Path::new(&working_profile.profile.modsfolder).join("cache.toml");
     if let Ok(file) = read_to_string(path).await {
         let parsed: Cache = from_str(&file)?;
@@ -93,9 +94,9 @@ pub async fn read_cache(working_profile: &WorkingProfile) -> Result<Cache, Box<d
 }
 
 /// Validates cache in the selected profile and rewrites it if needed
-pub async fn validate_cache(working_profile: &WorkingProfile) -> Result<(), Box<dyn Error>> {
+pub async fn validate_cache(working_profile: Arc<WorkingProfile>) -> Result<(), Box<dyn Error>> {
     if let Ok(real_hashes) = get_hashes(&working_profile.profile.modsfolder).await {
-        if let Ok(cache) = read_cache(working_profile).await {
+        if let Ok(cache) = read_cache(working_profile.clone()).await {
             // Create a HashSet for these lists
             let real_set: HashSet<String> = real_hashes.into_iter().collect();
             let cache_set: HashSet<String> = cache
@@ -119,8 +120,8 @@ pub async fn validate_cache(working_profile: &WorkingProfile) -> Result<(), Box<
 }
 
 pub async fn list_mods_cached(
-    working_profile: &WorkingProfile,
+    working_profile: Arc<WorkingProfile>,
 ) -> Result<Vec<Anymod>, Box<dyn Error>> {
-    validate_cache(working_profile).await?;
+    validate_cache(working_profile.clone()).await?;
     Ok(read_cache(working_profile).await?.elements)
 }
